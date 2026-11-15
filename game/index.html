@@ -1,0 +1,108 @@
+<!------------------------------------------------------------------
+  TIDELOCK — 5v5 plant/defuse tactical FPS in a blue-hour tidal
+  container terminal. Tide (attackers) plants a breaching charge on
+  the lock gate (Site A, amber) or the pump house (Site B, teal);
+  Harbour (defenders) holds both. Rounds: 15 s buy, 100 s live,
+  35 s bomb timer, first to 5, max 9. Buy economy ($800 start,
+  kill +$300, win +$3,250), 4 primaries + pistol + HE, team-plan
+  bots with 10 Hz perception, hearing and radio callouts. Original
+  map, fiction and names; three.js 0.187.0, no network, no files.
+------------------------------------------------------------------->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TIDELOCK — 5v5 Tactical FPS</title>
+<style>
+:root{--canvas:#0e1622;--concrete:#232a31;--steel:#3a4750;--ink:#e9e6df;--muted:#8fa3ad;--amber:#f0a830;--teal:#2e8f86;--rust:#a34a32;--ochre:#c08a3e;--teal-dark:#2e6f6a;--slate:#4a5a66;--gap:10px}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--canvas);color:var(--ink);font-family:system-ui,Segoe UI,Arial,sans-serif}
+#game{position:fixed;inset:0}#game canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;inset:0;pointer-events:none;user-select:none}
+.panel{background:rgba(14,22,34,.72);border:1px solid rgba(233,230,223,.18);border-radius:6px;padding:6px 10px}
+#topbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);text-align:center}
+#timer{font-size:26px;font-weight:700;letter-spacing:1px}#timer.low{color:#ff5a4a}
+#roundScore{font-size:14px;color:var(--muted)}#roundScore b{color:var(--ink)}
+#phaseLabel{font-size:12px;letter-spacing:3px;color:var(--amber)}
+#minimapBox{position:absolute;top:10px;left:10px}#minimap{display:block;background:#0a121c;border:1px solid var(--steel)}
+#money{margin-top:4px;font-size:15px;font-weight:700;color:var(--amber)}
+#feedBox{position:absolute;top:10px;right:10px;text-align:right;width:300px}
+#killFeed div,#radioLog div{font-size:13px;margin:2px 0;text-shadow:0 1px 2px #000}
+#radioLog div{color:var(--muted)}#killFeed .hs{color:var(--amber)}
+#healthBox{position:absolute;left:14px;bottom:14px;width:220px}
+#healthNum,#armourNum{font-size:22px;font-weight:700}
+.bar{height:8px;background:#10161f;border:1px solid var(--steel);margin:3px 0}
+.bar>i{display:block;height:100%;background:var(--teal)}#armourBar>i{background:var(--amber)}
+#ammoBox{position:absolute;right:14px;bottom:14px;text-align:right}
+#ammoMag{font-size:34px;font-weight:700}#ammoReserve{font-size:18px;color:var(--muted)}
+#weaponName{font-size:14px}#fireMode{font-size:12px;color:var(--muted)}
+#grenadeCount{font-size:13px;color:var(--amber)}
+#crosshair{position:absolute;left:50%;top:50%;width:0;height:0;--g:var(--gap)}
+#crosshair i{position:absolute;background:var(--ink);box-shadow:0 0 2px #000}
+#crosshair .t{left:-1px;top:calc(-1*var(--g) - 8px);width:2px;height:8px}
+#crosshair .b{left:-1px;top:var(--g);width:2px;height:8px}
+#crosshair .l{top:-1px;left:calc(-1*var(--g) - 8px);width:8px;height:2px}
+#crosshair .r{top:-1px;left:var(--g);width:8px;height:2px}
+#crosshair .dot{left:-2px;top:-2px;width:4px;height:4px;border-radius:50%}
+#hitmarker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(45deg);font-size:26px;color:#fff;display:none;text-shadow:0 0 4px #000}
+#hitmarker.kill{color:#ff5a4a}#hitmarker.headshot{color:var(--amber)}
+#damageArc{position:absolute;left:50%;top:50%;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;border:10px solid transparent;border-top-color:#ff5a4a;display:none}
+#prompt{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);font-size:16px;background:rgba(14,22,34,.8);padding:8px 14px;border-radius:6px;display:none}
+#plantRing{width:180px;height:6px;background:#10161f;margin-top:6px;display:none}
+#plantRing>i{display:block;height:100%;background:var(--amber);width:0}
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,16,26,.82);z-index:10;text-align:center}
+.overlay.hidden{display:none}
+.card{max-width:640px;padding:28px 34px;background:var(--concrete);border:1px solid var(--steel);border-radius:10px}
+.card h1{font-size:42px;letter-spacing:6px;color:var(--amber)}
+.card h2{font-size:26px;letter-spacing:2px;margin-bottom:8px}
+.card p{color:var(--muted);margin:8px 0;line-height:1.5}
+.card .keys{font-size:13px;text-align:left;display:inline-block}
+.card .keys b{color:var(--ink)}
+button{pointer-events:auto;margin-top:14px;padding:12px 28px;font-size:17px;font-weight:700;background:var(--amber);color:#14100a;border:0;border-radius:6px;cursor:pointer}
+#buyGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;text-align:left}
+.buyItem{pointer-events:auto;border:1px solid var(--steel);border-radius:6px;padding:9px 11px;cursor:pointer;background:rgba(14,22,34,.6)}
+.buyItem:hover{border-color:var(--amber)}.buyItem.owned{border-color:var(--teal);opacity:.75}
+.buyItem b{font-size:15px}.buyItem span{float:right;color:var(--amber);font-weight:700}
+.buyItem small{display:block;color:var(--muted);margin-top:2px}
+#roundBannerText{font-size:34px;letter-spacing:2px}
+#bannerSub{font-size:16px;color:var(--muted);margin-top:8px}
+#deathText,#matchText{font-size:18px;line-height:1.6}
+#tip{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--muted);background:rgba(14,22,34,.9);padding:4px 10px;border-radius:6px}
+.wicon{display:block;margin-bottom:2px}
+#spectateBar{position:absolute;top:64px;left:50%;transform:translateX(-50%);font-size:14px;letter-spacing:1px;background:rgba(14,22,34,.85);border:1px solid var(--steel);border-radius:6px;padding:6px 12px;display:none;white-space:nowrap}
+#flashOverlay{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:5}
+</style>
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.min.js"}}</script>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+  <div id="topbar"><div id="timer">1:40</div><div id="roundScore"><b id="scoreTide">0</b> Tide — Harbour <b id="scoreHarbour">0</b></div><div id="phaseLabel">BUY</div></div>
+  <div id="spectateBar"></div>
+  <div id="minimapBox" class="panel"><canvas id="minimap" width="180" height="140"></canvas><div id="money">$800</div></div>
+  <div id="feedBox"><div id="killFeed"></div><div id="radioLog"></div></div>
+  <div id="healthBox" class="panel"><span id="healthNum">100</span> HP<div class="bar" id="healthBar"><i id="healthFill" style="width:100%"></i></div><span id="armourNum"></span><div class="bar" id="armourBar" style="display:none"><i id="armourFill" style="width:100%"></i></div></div>
+  <div id="ammoBox" class="panel"><span id="ammoMag">12</span><span id="ammoReserve"> / 36</span><div id="weaponName">P9 Sidearm</div><div id="fireMode">SEMI</div><div id="grenadeCount">HE: 0</div></div>
+  <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
+  <div id="hitmarker">✕</div><div id="damageArc"></div>
+  <div id="prompt"><span id="promptText"></span><div id="plantRing"><i id="plantFill"></i></div></div>
+  <div id="tip">WASD move · Shift walk · Space jump · C crouch · B buy · E plant/defuse · 1/2/4 weapons · Q last · G utility · RMB aim · M mute</div>
+</div>
+<div id="flashOverlay"></div>
+<div id="overlayStart" class="overlay"><div class="card"><h1>TIDELOCK</h1><p>5v5 plant/defuse in a blue-hour tidal container terminal. Plant the charge on the lock gate (A, amber) or the pump house (B, teal). First to 5 rounds.</p><div class="keys"><b>WASD</b> move · <b>Mouse</b> look · <b>Click</b> fire · <b>R</b> reload · <b>B</b> buy (freeze phase) · <b>E</b> hold to plant/defuse · <b>1/2/4</b> weapons · <b>Q</b> last weapon · <b>G</b> utility · <b>RMB</b> aim · <b>C</b> crouch · <b>Space</b> jump · <b>Esc</b> pause</div><br><button id="playBtn">CLICK TO PLAY</button></div></div>
+<div id="overlayBuy" class="overlay hidden"><div class="card"><h2>BUY — <span id="buyTimer">15</span>s</h2><p>Money: <b id="buyMoney">$800</b> · Keys 1–0 or click. Weapons refill ammo on purchase.</p><div id="buyGrid">
+<div class="buyItem" data-item="vex9"><b>1 · Vex-9 SMG</b><span>$1,500</span><small>750 rpm · 32/96 · close quarters</small></div>
+<div class="buyItem" data-item="ar77"><b>2 · AR-77 Kestrel</b><span>$2,700</span><small>600 rpm · 30/90 · 1 headshot kill</small></div>
+<div class="buyItem" data-item="longbow"><b>3 · Longbow-50 DMR</b><span>$4,750</span><small>88 dmg · 5/15 · owns A-long</small></div>
+<div class="buyItem" data-item="breacher"><b>4 · Breacher-12</b><span>$2,100</span><small>12 pellets · 6/24 · point blank</small></div>
+<div class="buyItem" data-item="he"><b>5 · HE Charge</b><span>$300</span><small>110 dmg · 5 m radius · max 1</small></div>
+<div class="buyItem" data-item="plating"><b>6 · Plating</b><span>$650</span><small>100 armour · absorbs 50%</small></div>
+</div><button id="closeBuyBtn">CLOSE (B)</button></div></div>
+<div id="overlayPause" class="overlay hidden"><div class="card"><h2>PAUSED</h2><p>Pointer released. Click resume to keep playing.</p><button id="resumeBtn">RESUME</button></div></div>
+<div id="overlayRound" class="overlay hidden"><div class="card"><div id="roundBannerText">ROUND 1</div><div id="bannerSub"></div></div></div>
+<div id="overlayDeath" class="overlay hidden"><div class="card"><h2>YOU ARE DOWN</h2><div id="deathText"></div><p>Respawn next round. Your team fights on.</p></div></div>
+<div id="overlayMatch" class="overlay hidden"><div class="card"><h2 id="matchTitle">MATCH OVER</h2><div id="matchText"></div><button id="againBtn">PLAY AGAIN</button></div></div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
