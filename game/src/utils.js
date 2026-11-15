@@ -13,7 +13,6 @@ export function mulberry32(seed) {
 }
 export function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 export function lerp(a, b, t) { return a + (b - a) * t; }
-// Shortest signed angle from a to b, in (-PI, PI].
 export function angleDiff(a, b) {
   let d = (b - a) % (Math.PI * 2);
   if (d > Math.PI) d -= Math.PI * 2;
@@ -24,11 +23,9 @@ export function dist2(x1, z1, x2, z2) {
   const dx = x2 - x1, dz = z2 - z1;
   return dx * dx + dz * dz;
 }
-// Preallocated temps — the ONLY Vector3s hot loops may use.
 export const TMP_A = new THREE.Vector3();
 export const TMP_B = new THREE.Vector3();
 export const TMP_C = new THREE.Vector3();
-// Fixed pool: factory(i) builds each slot once; next() cycles, never allocates.
 export function makePool(n, factory) {
   const all = new Array(n);
   for (let i = 0; i < n; i++) all[i] = factory(i);

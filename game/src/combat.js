@@ -1,7 +1,7 @@
 // combat.js — hitscan for player + bots (state.combat.shoot) + grenades
-// (applyDamage). One reused Raycaster; hitboxes are bots.js meshes
-// (userData.player + userData.part). Damage = base x part x falloff x
-// armour (50% to armour). No allocation in shoot(). Friendly fire OFF.
+// (applyDamage). One reused Raycaster; hitboxes are bots.js meshes.
+// Damage = base x part x falloff x armour (50% to armour). No alloc
+// in shoot(). Friendly fire OFF.
 import * as THREE from 'three';
 import { addEvent } from './state.js';
 import { WEAPONS } from './weapons.js';
@@ -23,9 +23,6 @@ function falloff(w, d) {
 
 export function applyDamage(st, target, amount, attacker, part) {
   if (!target || !target.alive) return false;
-  // CSGO-shaped armour: ap of the damage goes straight to HP; the rest is
-  // split 50/50 between armour and HP. Blast is halved by armour (ap 0.5).
-  // With no armour the full amount hits HP.
   const wAp = (WEAPONS[attacker && attacker.weapon] || {}).ap;
   const ap = part === 'blast' ? 0.5 : (wAp ?? 0.5);
   let hpDmg = amount;
@@ -36,7 +33,6 @@ export function applyDamage(st, target, amount, attacker, part) {
     hpDmg = amount * ap + (armourDmg - absorbed);
   }
   target.hp -= hpDmg;
-  // Tagging: the victim is slowed briefly; the human also takes aim punch.
   target.tagUntil = st.time + 0.3;
   if (target.id === 0) target.punchDeg = 1.5;
   if (target.hp > 0) return false;
@@ -58,7 +54,6 @@ export function applyDamage(st, target, amount, attacker, part) {
   return true;
 }
 
-// Line of sight vs world colliders only (ai.js vision).
 export function hasLOS(st, x1, y1, z1, x2, y2, z2) {
   origin.set(x1, y1, z1);
   dir.set(x2 - x1, y2 - y1, z2 - z1);
@@ -72,8 +67,6 @@ export function hasLOS(st, x1, y1, z1, x2, y2, z2) {
 
 export function createCombat(state, shootables, effects) {
   world = shootables || [];
-  // Human hitboxes: players[0] has no bots.js body; combat owns 3 detached
-  // meshes tracking the player (same sizes as bots.js; crouch -0.42).
   const humanHits = [];
   const hm = new THREE.MeshBasicMaterial();
   const me0 = state.players[0];

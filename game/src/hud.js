@@ -8,17 +8,13 @@ import { CONFIG } from './config.js';
 // buy-grid buy-money overlay-start overlay-pause round-banner banner-text
 // banner-sub overlay-death death-info overlay-match match-info minimap
 // Missing ids are guarded: nothing here throws.
-// INTEGRATION (coordinator): index.html uses camelCase ids, so the kebab
-// keys below are mapped to the real ids via IDMAP. health-bar -> the fill
-// element (width = hp%); armor-wrap -> the outer armour bar; score has no
-// single element (scoreTide/scoreHarbour are set directly in update()).
 const IDMAP = {
   'health-bar': 'healthFill', 'health-num': 'healthNum',
   'armor-wrap': 'armourBar', 'armor-bar': 'armourFill',
   'ammo-mag': 'ammoMag', 'ammo-reserve': 'ammoReserve',
   'weapon-name': 'weaponName', 'weapon-mode': 'fireMode',
   'grenade-count': 'grenadeCount', 'timer': 'timer',
-  'phase-label': 'phaseLabel', 'money': 'money',
+  'phase-label': 'phaseLabel', 'round-label': 'roundLabel', 'money': 'money',
   'kill-feed': 'killFeed', 'radio-log': 'radioLog',
   'crosshair': 'crosshair', 'hitmarker': 'hitmarker',
   'damage-arc': 'damageArc', 'prompt': 'prompt',
@@ -66,7 +62,7 @@ function drawIcon(cv, id) {
 export function createHud(state, opts) {
   opts = opts || {};
   const el = {};
-  const ids = ['health-bar', 'health-num', 'armor-wrap', 'armor-bar', 'ammo-mag', 'ammo-reserve', 'weapon-name', 'weapon-mode', 'grenade-count', 'timer', 'phase-label', 'money', 'kill-feed', 'radio-log', 'crosshair', 'hitmarker', 'damage-arc', 'prompt', 'buy-menu', 'buy-grid', 'buy-money', 'overlay-start', 'overlay-pause', 'round-banner', 'banner-text', 'banner-sub', 'overlay-death', 'death-info', 'overlay-match', 'match-info', 'flash-overlay'];
+  const ids = ['health-bar', 'health-num', 'armor-wrap', 'armor-bar', 'ammo-mag', 'ammo-reserve', 'weapon-name', 'weapon-mode', 'grenade-count', 'timer', 'phase-label', 'round-label', 'money', 'kill-feed', 'radio-log', 'crosshair', 'hitmarker', 'damage-arc', 'prompt', 'buy-menu', 'buy-grid', 'buy-money', 'overlay-start', 'overlay-pause', 'round-banner', 'banner-text', 'banner-sub', 'overlay-death', 'death-info', 'overlay-match', 'match-info', 'flash-overlay'];
   for (let i = 0; i < ids.length; i++) el[ids[i]] = $(IDMAP[ids[i]] || ids[i]);
   const cache = {};
   let eventSeen = 0, hitT = null, arcT = null, bannerT = null;
@@ -87,8 +83,8 @@ export function createHud(state, opts) {
     const kills = [], radios = [];
     for (let i = evs.length - 1; i >= 0 && (kills.length < 4 || radios.length < 3); i--) {
       const e = evs[i];
-      if (e.kind === 'kill' && kills.length < 4) kills.push(e.text);
-      else if (e.kind === 'callout' && radios.length < 3) radios.push(e.text);
+      if (e.kind === 'kill' && kills.length < 4) kills.push(e.text.slice(0, 40));
+      else if (e.kind === 'callout' && radios.length < 3) radios.push(e.text.slice(0, 40));
     }
     if (el['kill-feed']) {
       const html = kills.map(t => '<div>' + t + '</div>').join('');
@@ -167,6 +163,7 @@ export function createHud(state, opts) {
       if (el.timer) el.timer.classList.toggle('low', state.phaseTime < 10 && (state.phase === 'live' || state.phase === 'planted'));
       setText($('scoreTide'), String(state.score.tide));
       setText($('scoreHarbour'), String(state.score.harbour));
+      setText(el['round-label'], 'ROUND ' + state.round + ' OF 9');
       setText(el['phase-label'], phaseText());
       setText(el.money, '$' + p.money);
       if (el.crosshair && opts.getSpread) {
@@ -180,7 +177,6 @@ export function createHud(state, opts) {
       if (arcT && performance.now() - arcT > 1000 && el['damage-arc']) { el['damage-arc'].style.display = 'none'; arcT = null; }
       if (bannerT && performance.now() - bannerT > 5000 && el['round-banner']) { el['round-banner'].style.display = 'none'; bannerT = null; }
       if (el['overlay-start']) el['overlay-start'].style.display = state.phase === 'menu' ? 'flex' : 'none';
-      // Flash overlay: white fade while blinded (state.flashBlind, Agent B).
       if (el['flash-overlay']) {
         const fb = state.flashBlind;
         let o = 0;
@@ -210,8 +206,6 @@ export function createHud(state, opts) {
     hideDeath() { if (el['overlay-death']) el['overlay-death'].style.display = 'none'; },
     showMatch(winner) {
       if (el['overlay-match']) el['overlay-match'].style.display = 'flex';
-      const w = winner === 'tide' ? 'TIDE' : 'HARBOUR';
-      setText(el['match-info'], w + ' WINS ' + state.score.tide + ' - ' + state.score.harbour);
     },
     prompt(text) {
       if (!el.prompt) return;
@@ -238,7 +232,18 @@ export function createHud(state, opts) {
       setText(b, text || ''); b.style.display = 'block';
     },
     hideSpectate() { const b = $('spectateBar'); if (b) b.style.display = 'none'; },
-    showScoreboard() {}, // no-op: scoreboard skipped, over the byte budget
+    showScoreboard() {
+      const m = el['match-info']; if (!m) return;
+      const w = state.matchWinner === 'tide' ? 'TIDE' : 'HARBOUR';
+      const rows = state.players.slice().sort((a, b) => b.kills - a.kills);
+      let h = '<div>' + w + ' WINS ' + state.score.tide + ' — ' + state.score.harbour + ' · ' + (state.roundReason || '') + '</div><table>';
+      for (let i = 0; i < rows.length; i++) { const p = rows[i];
+        h += '<tr' + (p.id === state.lastMvp ? ' class="mvp"' : '') + '><td>' + p.name + '</td><td>' + (p.team === 'tide' ? 'TIDE' : 'HARBOUR') + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>$' + p.money + '</td></tr>'; }
+      h += '</table>';
+      const mv = state.lastMvp >= 0 ? state.players[state.lastMvp] : null;
+      if (mv) h += '<div>★ MVP — ' + mv.name + ' · ' + mv.kills + ' kills</div>';
+      m.innerHTML = h;
+    },
   };
   return hud;
 }

@@ -1,16 +1,10 @@
 // bots.js — TIDELOCK bot bodies: meshes, hitboxes, movement, death anim.
-// NO decisions here: ai.js decides (mode, route in player.ai.wp, aim in
-// ai.aimYaw/aimPitch, fire intent, crouch); this file EXECUTES. Movement
-// follows ai.wp at 4.6 m/s with a 0.4 s corner peek at intermediate
-// waypoints, axis-separated AABB collision (same probe pattern as
-// player.js), and step-up onto <=0.9 m boxes (gantry deck, low crates) while
-// 1.1 m+ cover still blocks. Yaw slews toward ai.aimYaw at the 240 deg/s bot
-// turn cap (below the player); while moving with no aim target the bot faces
-// its movement heading. Death: falls over 0.4 s, fades after 8 s.
+// NO decisions here: ai.js decides (mode, route, aim, fire, crouch); this
+// file EXECUTES. Bots walk ai.wp at 4.6 m/s, step up <=0.9 m boxes, yaw
+// slews to ai.aimYaw at the 240 deg/s cap; death falls 0.4 s, fades after 8 s.
 // Colliders are built from MAP.boxes — the same data world.js builds from.
-// LOOK: team-coloured torsos (Tide amber-brown, Harbour teal), wide bright
-// trim, glowing visor, helmet cap, shoulder pads, backpack, knee pads and a
-// long steel gun with a team-coloured tip — teams read at a glance.
+// LOOK: team-coloured torsos (amber Tide / teal Harbour), bright trim,
+// glowing visor, helmet, pads, backpack, long steel gun — teams read at a glance.
 // HITBOXES: head/torso/legs meshes keep their exact geometry and y
 // positions (combat.js raycasts them); helmet/pads/pack/knees are
 // visual-only and hug the hitbox silhouette.
@@ -45,8 +39,6 @@ function wrapAng(a) {
   return a;
 }
 
-// AABBs from MAP.boxes: {x0,x1,z0,z1,y0,y1}. Boxes with top <=0.95 m are
-// steppable, never walls; boxes above head height never collide.
 function buildColliders() {
   const out = [];
   const boxes = MAP.boxes || [];
@@ -157,7 +149,6 @@ export function createBots(state, scene) {
       group.add(chevron);
     }
     scene.add(group);
-    // Name tag: one canvas sprite per bot, team-coloured, above the head.
     const tc = document.createElement('canvas'); tc.width = 128; tc.height = 32;
     const tg = tc.getContext('2d'); tg.font = 'bold 20px system-ui'; tg.textAlign = 'center';
     tg.fillStyle = p.team === 'tide' ? '#f0a830' : '#2e8f86'; tg.fillText(p.name, 64, 22);
@@ -194,7 +185,6 @@ export function createBots(state, scene) {
     const wantCrouch = !!(a && a.wantCrouch);
     p.crouch = wantCrouch;
     rec.body.position.y = wantCrouch ? -0.42 : 0;
-    // Steering: strafe target while engaging, else the ai.wp route.
     let mx = 0, mz = 0, moving = false;
     if (a) {
       if (a.mode === 'engage' && a.strafeT > 0) {
@@ -216,36 +206,39 @@ export function createBots(state, scene) {
         }
       }
     }
-    const speed = (wantCrouch ? CROUCH_SPEED : BOT_SPEED) * (state.time < p.tagUntil ? 0.7 : 1);
-    if (rec.avoidT > 0 && (a.mode === 'move' || a.mode === 'investigate' || a.mode === 'retreat')) {
+    const speed = (wantCrouch || (a && a.walkOnly) ? CROUCH_SPEED : BOT_SPEED) * (state.time < p.tagUntil ? 0.7 : 1);
+    if (rec.avoidT > 0 && a && (a.mode === 'move' || a.mode === 'investigate' || a.mode === 'retreat')) {
       rec.avoidT -= dt; // sidestep around it, then resume the route
       const len = Math.sqrt(mx * mx + mz * mz) || 1;
       const ux = mx / len, uz = mz / len;
       mx = -uz * rec.avoidSign; mz = ux * rec.avoidSign;
       moving = true;
     }
+    if (moving || (a && a.mode === 'engage')) { // separation: never stack on a mate
+      const ps = state.players;
+      for (let j = 0; j < ps.length; j++) { const q = ps[j];
+        if (q === p || !q.alive || q.team !== p.team) continue;
+        const dx = p.x - q.x, dz = p.z - q.z, d2 = dx * dx + dz * dz;
+        if (d2 < 0.81 && d2 > 0.0001) { const d = Math.sqrt(d2), f = (0.9 - d) * 1.5 / d; mx += dx * f; mz += dz * f; } }
+    }
     if (moving) {
       const len = Math.sqrt(mx * mx + mz * mz) || 1;
       p.vx = mx / len * speed; p.vz = mz / len * speed;
     } else { p.vx = 0; p.vz = 0; }
-    // Axis-separated AABB move (player.js probe pattern).
     const ox = p.x, oz = p.z;
     const nx = p.x + p.vx * dt;
     if (!hitsWall(cols, nx, p.z, p.y)) p.x = nx; else p.vx = 0;
     const nz = p.z + p.vz * dt;
     if (!hitsWall(cols, p.x, nz, p.y)) p.z = nz; else p.vz = 0;
-    if (moving && p.x === ox && p.z === oz && rec.avoidT <= 0) {
+    if (moving && Math.abs(p.x - ox) + Math.abs(p.z - oz) < 0.02 && rec.avoidT <= 0) {
       rec.avoidT = 0.7; rec.avoidSign *= -1; // stuck: sidestep, flip side
     }
     if (p.x > 21.6) p.x = 21.6; else if (p.x < -21.6) p.x = -21.6;
     if (p.z > 16.6) p.z = 16.6; else if (p.z < -16.6) p.z = -16.6;
-    // Ground: step onto <=0.9 m boxes (gantry deck, low crates), else y=0.
     const gy = groundAt(cols, p.x, p.z);
     p.y += (gy - p.y) * Math.min(1, dt * 10);
     if (Math.abs(gy - p.y) < 0.02) p.y = gy;
     p.onGround = p.y <= gy + 0.02;
-    // Yaw: slew toward ai.aimYaw (engage/hold/plant/defuse) or movement
-    // heading, at the 240 deg/s bot turn cap. Pitch copies ai.aimPitch.
     let targetYaw = p.yaw;
     if (a && (a.mode === 'engage' || a.mode === 'hold' || a.mode === 'plant' || a.mode === 'defuse')) {
       targetYaw = a.aimYaw || p.yaw;
@@ -270,7 +263,7 @@ export function createBots(state, scene) {
         p.ai.mode = 'buy'; p.ai.wp.length = 0; p.ai.wpIndex = 0;
         p.ai.targetId = -1; p.ai.firing = false; p.ai.strafeT = 0; p.ai.burstLeft = 0;
       }
-      rec.fallT = 0; rec.deathT = 0; rec.peekT = 0;
+      rec.fallT = 0; rec.deathT = 0; rec.peekT = 0; rec.avoidT = 0; rec.avoidSign = 1;
       rec.group.visible = true;
       rec.group.rotation.set(0, p.yaw, 0);
       rec.group.position.set(p.x, 0, p.z);

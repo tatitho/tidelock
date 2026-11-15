@@ -1,9 +1,7 @@
 import * as THREE from 'three';
 // effects.js — pooled tracers, impacts, muzzle flash, explosion, shake.
-// All pooled; no `new` in step() or in the effect triggers. Tracers and
-// sparks use additive blending so they glow; every bullet impact also
-// kicks up a small grey dust puff from the shared smoke-sprite pool
-// (short life, small scale) next to the scorch mark.
+// All pooled; no `new` in step() or the effect triggers. Tracers/sparks
+// use additive blending; impacts kick up dust + a scorch mark.
 export function createEffects(state, scene) {
   const bm = (c, o, add) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o,
     blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: false });
@@ -21,8 +19,6 @@ export function createEffects(state, scene) {
     m.visible = false; m.rotation.x = -Math.PI / 2; m.position.y = 0.02; scene.add(m); sc.push({ m, life: 0 });
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x9aa0a0, transparent: true, opacity: 0 }));
     s.visible = false; scene.add(s); sm.push({ s, life: 0, ml: 1, sz: 6, op: 0.7 }); }
-  // Smoke pool: 12 large soft grey sprites, 15 s life; a cloud takes 5.
-  // Separate from the short-lived impact pool above.
   for (let i = 0; i < 12; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x9aa0a0, transparent: true, opacity: 0 }));
     s.visible = false; scene.add(s); sk.push({ s, life: 0 }); }
   const fl = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.4), bm(0xffc46b, 0, true));
@@ -43,7 +39,6 @@ export function createEffects(state, scene) {
       sg.attributes.position.needsUpdate = true;
       const s = sc[cN]; cN = (cN + 1) % 8;
       s.m.position.set(p.x, 0.02, p.z); s.m.material.opacity = 0.55; s.m.visible = true; s.life = 6;
-      // Dust puff: grey, short life, small — reuses the smoke pool.
       const d = sm[mN]; mN = (mN + 1) % 8;
       d.s.position.set(p.x, p.y + 0.15, p.z); d.s.scale.set(0.7, 0.7, 1);
       d.s.material.opacity = 0.45; d.s.visible = true; d.life = 0.6; d.ml = 0.6; d.sz = 1.4; d.op = 0.45;
@@ -82,7 +77,6 @@ export function createEffects(state, scene) {
           const q = k.sz * (0.5 + 0.5 * f); k.s.scale.set(q, q, 1);
           k.s.material.opacity = k.op * Math.max(0, k.life) / k.ml; if (k.life <= 0) k.s.visible = false; }
       }
-      // Smoke: grow 2 -> 5 over 15 s, hold 0.55, fade in last 3 s.
       for (let i = 0; i < 12; i++) {
         const k = sk[i];
         if (k.life > 0) { k.life -= dt; const f = 1 - Math.max(0, k.life) / 15;

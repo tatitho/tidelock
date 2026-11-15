@@ -1,13 +1,11 @@
-// TIDELOCK — 5v5 plant/defuse FPS, blue-hour container terminal.
-// Tide plants a charge on the lock gate (A, amber) or pump house (B, teal);
-// Harbour holds both. Rounds: 15 s buy, 100 s live, 35 s bomb, first to 5,
-// max 9. Buy economy, 4 primaries + pistol + HE, team-plan bots (10 Hz
-// vision/hearing). main.js only wires modules: no game state lives here
-// (see state.js). Fixed-step 60 Hz sim, render, deterministic ?shot=
-// captures. Import order below is the dossier's reading order (spec §3.3).
+// TIDELOCK — 5v5 plant/defuse FPS, blue-hour container terminal. Tide
+// plants on the lock gate (A, amber) or pump house (B, teal); Harbour
+// holds both. Rounds: 15 s buy, 100 s live, 35 s bomb, first to 5, max 9.
+// main.js wires modules only (state.js owns state). Fixed-step 60 Hz sim,
+// deterministic ?shot= captures. Import order = the dossier's reading order.
 import * as THREE from 'three';
 import { PALETTE } from './palette.js';
-import { state } from './state.js';
+import { state, addEvent } from './state.js';
 import { CONFIG } from './config.js';
 import { WEAPONS, PRIMARIES } from './weapons.js';
 import { MAP } from './map.js';
@@ -35,10 +33,8 @@ state.rng = mulberry32(seed);
 const FIXED = CONFIG.tick || 1 / 60;
 const PLANT_T = CONFIG.plantTime || 3.2; // defuse time is per-player (kit? 5 : 10)
 const EMPTY_KEYS = new Set();
-// Compat: ai.js reads CONFIG.botTiers, config.js ships `tiers`.
 if (!CONFIG.botTiers) CONFIG.botTiers = CONFIG.tiers;
 
-// --- boot (wiring only) ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -67,7 +63,6 @@ const minimap = createMinimap(document.getElementById('minimap'));
 const input = createInput(renderer.domElement, onLockChange);
 setPlanPicker(pickPlan);
 
-// --- DOM helpers (real index.html ids) ---
 function el(id) { return document.getElementById(id); }
 function setText(id, v) { const e = el(id); if (e) e.textContent = v; }
 function setWidth(id, p) { const e = el(id); if (e) e.style.width = Math.max(0, Math.min(100, p)) + '%'; }
@@ -78,7 +73,6 @@ onClick('resumeBtn', () => input.requestLock());
 onClick('againBtn', () => { newMatch(); input.requestLock(); });
 onClick('closeBuyBtn', () => closeBuy());
 function closeBuy() { hud.showBuy(false); setOverlay('overlayBuy', false); input.requestLock(); }
-// Round start also clears bot death anims (bots.js keeps fall/fade state).
 function newMatch() { specClear(); startMatch(state); bots.reset(); }
 const buyItems = document.querySelectorAll('#buyGrid .buyItem');
 for (let i = 0; i < buyItems.length; i++) {
@@ -225,7 +219,9 @@ function onPhaseChange(prev, next) {
   if (prev === 'planted') audio.stopPlantedLoop();
   if (next === 'roundEnd') {
     const w = state.roundWinner === 'tide' ? 'TIDE' : 'HARBOUR';
-    const sub = state.roundReason + '  ·  ' + state.score.tide + ' — ' + state.score.harbour;
+    let sub = state.roundReason + '  ·  ' + state.score.tide + ' — ' + state.score.harbour;
+    const mv = state.lastMvp >= 0 ? state.players[state.lastMvp] : null;
+    if (mv) sub += '  ·  MVP: ' + mv.name + ' — ' + mv.kills + ' kills';
     hud.showBanner(w + ' TAKES THE ROUND', sub);
     setText('roundBannerText', w + ' TAKES THE ROUND');
     setText('bannerSub', sub);
@@ -238,7 +234,7 @@ function onPhaseChange(prev, next) {
     hud.showMatch(state.matchWinner);
     const w = state.matchWinner === 'tide' ? 'TIDE' : 'HARBOUR';
     setText('matchTitle', w + ' WINS THE MATCH');
-    setText('matchText', w + ' wins ' + state.score.tide + ' — ' + state.score.harbour + '. Click to play again.');
+    hud.showScoreboard();
     setOverlay('overlayMatch', true);
   }
   if (next === 'buy') {
@@ -287,9 +283,8 @@ function stepSim(dt) {
   }
 }
 
-// Death spectate: camera follows the next alive Tide teammate (eye view).
-// Click / Q / Space cycles; auto-advance when the target dies; no alive
-// teammate left -> the death overlay (the round is lost for the player).
+// Death spectate: follow-mode camera on the next alive Tide teammate;
+// click / Q / Space cycles, auto-advance on death, else the death overlay.
 const spec = { on: false, target: -1, yo: 0, po: 0 };
 function specShow(t) {
   hud.hideDeath();
@@ -367,7 +362,6 @@ function frame(now) {
   }
 }
 
-// --- deterministic ?shot= captures (spec §4) ---
 function stepN(n) { for (let i = 0; i < n; i++) stepSim(FIXED); }
 function placeBot(i, x, z, y) {
   const p = state.players[i];
@@ -375,8 +369,8 @@ function placeBot(i, x, z, y) {
   if (p.ai) p.ai.wp = [];
   if (p.group) p.group.position.set(x, p.y, z);
 }
-function aimAt(t) {
-  const dx = t.x - me.x, dy = (t.y + 1.2) - (me.y + 1.6), dz = t.z - me.z;
+function aimAt(t, h) {
+  const dx = t.x - me.x, dy = (t.y + (h || 1.2)) - (me.y + 1.6), dz = t.z - me.z;
   me.yaw = Math.atan2(-dx, -dz);
   me.pitch = Math.atan2(dy, Math.hypot(dx, dz));
 }
@@ -386,7 +380,6 @@ function base(r, st, sh, ph, pt, money, mag) {
   me.money = money; me.weapon = 'ar77'; me.mag = mag; me.reserve = 90;
   weapon.switchTo('ar77'); me.weapon = 'ar77';
 }
-// Mirror staged state onto the real index.html HUD ids (shot mode only).
 function setHudMirror() {
   const wp = WEAPONS[me.weapon];
   const rows = [
@@ -401,6 +394,7 @@ function setHudMirror() {
 }
 
 function stageShot(name) {
+  const tip = document.getElementById('tip'); if (tip) tip.style.display = 'none';
   newMatch();
   if (name === 'menu') {
     base(3, 2, 1, 'buy', 12, 4650, 30);
@@ -417,13 +411,34 @@ function stageShot(name) {
     setText('buyTimer', '12');
   } else if (name === 'fight') {
     base(3, 2, 1, 'live', 84, 4650, 25);
-    me.x = 0; me.z = 8; me.yaw = 0; me.pitch = 0;
-    placeBot(5, 0, -2, 0.9); placeBot(6, -2, 2); placeBot(1, -4, 4);
-    stepN(30);
-    me.hp = 100;
-    placeBot(5, 0, -2, 0.9); placeBot(6, -2, 2); placeBot(1, -4, 4);
+    me.armor = 85;
+    // Mid-fight at A: three Harbour bots facing the camera and firing,
+    // Rook flanking left, the giant A sign behind them.
+    const faceMe = (p) => { const a = p.ai; a.mode = 'hold'; a.lookYaw = Math.atan2(-(me.x - p.x), -(me.z - p.z)); a.holdUntil = 1e9; p.yaw = a.lookYaw; a.aimYaw = a.lookYaw; if (p.group) p.group.rotation.y = p.yaw; };
+    const rookFace = () => { const r = state.players[1]; r.yaw = 0.70; r.ai.mode = 'hold'; r.ai.lookYaw = 0.70; r.ai.aimYaw = 0.70; r.ai.holdUntil = 1e9; if (r.group) r.group.rotation.y = 0.70; };
+    placeBot(5, -10, -4, 0); placeBot(6, -14, -4, 0); placeBot(7, -8, -8, 0); placeBot(1, -6.5, -2.33, 0);
+    me.x = -4; me.z = 2; me.yaw = 0.70; me.pitch = 0;
+    stepN(30); // updateAI creates each bot's ai object (ensureAI) here
+    placeBot(5, -10, -4, 0); placeBot(6, -14, -4, 0); placeBot(7, -8, -8, 0); placeBot(1, -6.5, -2.33, 0);
+    faceMe(state.players[5]); faceMe(state.players[6]); faceMe(state.players[7]); rookFace();
+    me.x = -4; me.z = 2; me.yaw = 0.70; me.pitch = 0; // re-place: the player drifts during stepN
+    // Uncrouch the staged bots: bots.update lowers the body sub-group
+    // (head + torso hitboxes) 0.42 m while crouched, and placeBot does
+    // not reset it — a crouched Kess dodges the headshot ray. dt 0
+    // syncs body + group transforms with no movement.
+    for (const i of [1, 5, 6, 7]) { const p = state.players[i]; p.crouch = false; if (p.ai) p.ai.wantCrouch = false; }
+    bots.update(0);
+    effects.step(1, null); // clear stepN tracers/muzzles: only the two staged shots may draw
+    me.hp = 100; me.armor = 85;
+    // Brann fires at Rook's torso (short tracer, ends on the teammate).
+    const br = state.players[6];
+    const rk = state.players[1];
+    const bDir = new THREE.Vector3(rk.x - br.x, (rk.y + 1.08) - (br.y + 1.6), rk.z - br.z).normalize();
+    combat.shoot(state, br, bDir, 0.02, 'ar77');
+    effects.muzzle(new THREE.Vector3(br.x - Math.sin(br.yaw), br.y + 1.16, br.z - Math.cos(br.yaw)), 0xffc46b);
+    // Player headshots Kess centre-frame.
     weapon.setAds(true);
-    aimAt(state.players[5]);
+    aimAt(state.players[5], 1.52);
     syncCamera();
     scene.updateMatrixWorld(true); // hitbox matrices must be current to shoot
     const kick = weapon.fire(); // one real shot, spread 0 (see combat.shoot)
@@ -433,6 +448,9 @@ function stageShot(name) {
       player.recoil(kick.pitch, kick.yaw);
     }
     weapon.clearFlash(); // no frozen flash card in the capture
+    addEvent(state, 'callout', 'Rook (Entry): contact mid, two pushing A');
+    addEvent(state, 'callout', 'Sable (Lurk): rotating through mid doors');
+    addEvent(state, 'callout', 'Ivo (Support): go go, executing A');
   } else if (name === 'plant') {
     base(3, 2, 1, 'live', 42, 4650, 30);
     me.x = -15; me.z = -7; me.yaw = 0.15; me.pitch = 0;
@@ -443,19 +461,17 @@ function stageShot(name) {
     placeBot(5, -17.5, -12); placeBot(1, -13, -10.5);
     me.planting = 0.6;
     prompt('Hold E to plant — 60%', 0.6);
-  } else if (name === 'win') {
-    base(7, 5, 2, 'roundEnd', 5, 4650, 18);
-    state.roundWinner = 'tide'; state.roundReason = 'bomb detonated';
+  } else if (name === 'board') {
+    base(7, 5, 2, 'matchEnd', 5, 4650, 18);
+    state.roundWinner = 'tide'; state.roundReason = 'bomb detonated'; state.matchWinner = 'tide'; state.lastMvp = 1;
+    const kd = [[9, 5, 4650], [11, 3, 6400], [7, 5, 5200], [6, 5, 3800], [5, 5, 2900], [8, 9, 5600], [6, 8, 4100], [4, 7, 2400], [3, 8, 3300], [2, 6, 2050]];
+    for (let i = 0; i < 10; i++) { const p = state.players[i]; p.kills = kd[i][0]; p.deaths = kd[i][1]; p.money = kd[i][2]; }
     me.x = -15; me.z = -6; me.yaw = 0; me.pitch = 0;
-    placeBot(5, -13, -10); placeBot(6, -17, -9);
-    placeBot(1, -12, -7); placeBot(2, -18, -6);
+    placeBot(1, -12, -7); placeBot(5, -13, -10);
     state.players[5].alive = false; state.players[5].hp = 0;
-    state.players[6].alive = false; state.players[6].hp = 0;
-    stepN(30);
-    setText('roundBannerText', 'TIDE TAKES THE ROUND');
-    setText('bannerSub', 'bomb detonated  ·  5 — 2');
-    setOverlay('overlayRound', true);
-    effects.explosion(TMP_A.set(-15, 1, -11)); // smoke + amber glow at A
+    setText('matchTitle', 'TIDE WINS THE MATCH');
+    hud.showScoreboard();
+    setOverlay('overlayMatch', true);
   }
   syncCamera();
   hud.update();

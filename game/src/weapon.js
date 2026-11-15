@@ -2,19 +2,16 @@ import * as THREE from 'three';
 import { WEAPONS } from './weapons.js';
 
 // View models + recoil/bloom/spread (spec 2.4). Stopping to aim pays:
-// moving rifle spray at 20 m: spread ~0.028 rad ~ 0.56 m wide, wider
-// than a torso; still + crouched + ADS first shot: ~0.0008 rad ~ 1.6 cm.
+// moving rifle spray at 20 m is ~0.56 m wide (wider than a torso);
+// still + crouched + ADS first shot is ~1.6 cm.
 // LOOK: light gunmetal steel (0x4a5a66) so the gun reads against the dark
 // scene; amber is a tiny sight post only, never a block. Each weapon is a
-// distinct low-poly silhouette: receiver, barrel + muzzle, handguard/rail,
-// angled magazine, stock, grip, sights. Muzzle flash sits at the muzzle
-// (MUZZLE z per weapon), not mid-air.
+// distinct low-poly silhouettes: receiver, barrel, handguard, mag, stock.
 const FLASH_COLORS = { ar77: 0xffc46b, vex9: 0xffd27a, longbow: 0xffe9a8, breacher: 0xff9a3d, p9: 0xffc46b, he: 0xff8c2e };
 const ACCENTS = { ar77: 0xf0a830, vex9: 0x2e8f86, longbow: 0x8fa3ad, breacher: 0xa34a32, p9: 0x4a5a66, he: 0xc08a3e };
 const MUZZLE = { ar77: -0.95, vex9: -0.58, longbow: -1.12, breacher: -0.82, p9: -0.28, he: -0.22 };
 const STEEL = 0x4a5a66, DARK = 0x2a343e, MID = 0x3a4750;
 const GLOVE = 0x1e2420, SLEEVE = 0x232c33; // viewmodel hands: dark glove +
-// sleeve boxes, camera-attached only — they never touch hitbox geometry.
 
 function box(w, h, d, color, x, y, z) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
@@ -141,8 +138,6 @@ export function createWeaponView(camera, state) {
     state.players[0].mag--;
     return { pitch: w._kick, yaw };
   };
-  // Staged ?shot= captures render without stepping the weapon, so the
-  // 50 ms flash would freeze at full opacity as a pale card on the muzzle.
   w.clearFlash = function () { flash.material.opacity = 0; flashLight.intensity = 0; w._flashT = 0; };
   w.reload = function () {
     const p = state.players[0];

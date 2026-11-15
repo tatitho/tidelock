@@ -1,8 +1,6 @@
 // ai.js — TIDELOCK bot brains: 10 Hz staggered think, state machine, team
 // plans, hearing, plant/defuse. FAIRNESS: bots never know an enemy position
-// without vision (100 deg cone, 40 m, LOS vs world only) or hearing (+/-4 m,
-// 6 s memory). No instant headshots: tier reaction, aim error decays 40%/s
-// only while visible, 3-5 round bursts, torso aim, turn rate capped 240 deg/s.
+// without vision (100 deg cone, 40 m, LOS) or hearing (+/-4 m, 6 s).
 // ai.js DECIDES, bots.js EXECUTES. Routes: all-pairs next-hop over MAP.edges.
 import { Vector3 } from 'three';
 import { CONFIG } from './config.js';
@@ -96,6 +94,17 @@ function routeVia(p, via, goal) {
 
 function routeDone(a) { return !a.wp.length || a.wpIndex >= a.wp.length; }
 
+const POST = { A: [[-18, -13, 'ctConn1'], [-12, -13, 'aEntry']], B: [[18, -13, 'ctConn2'], [12, -13, 'bEntry']] };
+function postPlant(state, p) {
+  const a = p.ai;
+  const spots = POST[state.bomb.site || 'A'];
+  const sp = spots[(p.id - 1) % spots.length];
+  const lw = MAP.waypoints[sp[2]];
+  if (dist2(p.x, p.z, sp[0], sp[1]) > 4) {
+    if (a.postSpot !== sp || a.mode !== 'move') { routeTo(p, sp[0], sp[1]); a.mode = 'move'; a.wantCrouch = false; a.postSpot = sp; }
+  } else { a.postSpot = sp; toHold(a, state.time, 4, p, lw ? lw.x : state.bomb.x, lw ? lw.z : state.bomb.z); }
+}
+
 function go(p, x, z) {
   routeTo(p, x, z);
   p.ai.mode = 'move'; p.ai.wantCrouch = false;
@@ -120,8 +129,7 @@ function nearestMate(state, team, x, z) {
   return nq;
 }
 
-// Plan lanes per team slot, 'via>goal' (single name = hold there). Tide has
-// 4 bots; the human is the 5th attacker.
+// Plan lanes per team slot, 'via>goal' (single name = hold there).
 const LANES = {
   tide: {
     'a-main': ['aLong2>aSite', 'aShort2>aSite', 'aLong2>aSite', 'midDoors>bSite'],
@@ -136,8 +144,7 @@ const LANES = {
   },
 };
 
-// Weighted random plan. After a lost round the just-failed plan is excluded,
-// so a failed plan is never repeated twice in a row.
+// Weighted random plan; a failed plan is never repeated twice in a row.
 export function pickPlan(state, team) {
   const list = team === 'tide'
     ? ['a-main', 3, 'b-main', 3, 'mid-split', 2, 'a-rush', 2]
@@ -157,18 +164,34 @@ export function pickPlan(state, team) {
 }
 
 function assignRoutes(state) {
+  state.intel = { site: null, count: 0, t: 0 };
+  state.exec = { executing: false, execAt: 30 + state.rng() * 10, lurkerId: -1, rotated: false, liveStartT: null };
   const ps = state.players;
+  if (!state.plans) state.plans = {};
+  if (!state.plans.tide) pickPlan(state, 'tide');
+  if (!state.plans.harbour) pickPlan(state, 'harbour');
+  const mainSite = state.plans.tide === 'b-main' ? 'B' : 'A';
+  const otherSite = mainSite === 'A' ? 'B' : 'A';
+  let lurkerId = -1;
+  for (let i = 0; i < ps.length; i++) { const p = ps[i]; if (p.bot && p.team === 'tide' && p.alive && !p.isCarrier && lurkerId < 0) lurkerId = p.id; }
+  state.exec.lurkerId = lurkerId;
   for (let i = 0; i < ps.length; i++) {
     const p = ps[i];
     if (!p.bot || !p.alive) continue;
     const a = ensureAI(p);
-    if (!state.plans) state.plans = {};
-    if (!state.plans[p.team]) pickPlan(state, p.team);
-    const ti = p.team === 'tide' ? p.id - 1 : p.id - 5;
-    if (p.id === 1) routeTo(p, state.players[0].x, state.players[0].z); // buddy shadows the human, no lane
-    else {
-      const lanes = LANES[p.team][state.plans[p.team]];
-      const L = lanes[Math.min(ti, lanes.length - 1)].split('>');
+    a.staged = false; a.staging = false; a.lurker = false; a.walkOnly = false; a.heUsed = false; a.postSpot = null;
+    if (p.team === 'tide') {
+      if (p.id === lurkerId) {
+        a.lurker = true; a.walkOnly = true; // quiet walk to the other site via mid
+        routeVia(p, 'midDoors', otherSite === 'A' ? 'aSite' : 'bSite');
+      } else {
+        a.staging = true; a.stageSite = mainSite;
+        const E = MAP.waypoints[mainSite === 'A' ? 'aEntry' : 'bEntry'];
+        routeTo(p, E.x, E.z);
+      }
+    } else {
+      const lanes = LANES.harbour[state.plans.harbour];
+      const L = lanes[Math.min(p.id - 5, lanes.length - 1)].split('>');
       routeVia(p, L[0], L[1] || L[0]);
     }
     a.targetId = -1; a.visible = false; a.firing = false; a.burstLeft = 0;
@@ -192,13 +215,14 @@ function retreatTo(p) {
   routeTo(p, hx, hz);
 }
 
-function toHold(a, t, dur) {
+function toHold(a, t, dur, p, lookX, lookZ) {
   a.mode = 'hold'; a.holdUntil = t + dur; a.wantCrouch = true;
+  a.lookYaw = lookX === undefined ? a.aimYaw : Math.atan2(-(lookX - p.x), -(lookZ - p.z));
 }
 
-// Death: radio callout + defender-rotation trigger (state.lastDeath).
+// Death: radio callout + intel for the rotation discipline.
 function recordDeath(state, q) {
-  state.lastDeath = { x: q.x, z: q.z, t: state.time, team: q.team, name: q.name, called: false };
+  if (q.team === 'harbour' && state.intel) { const it = state.intel; it.count++; it.t = state.time; it.site = dist2(q.x, q.z, MAP.sites.A.cx, MAP.sites.A.cz) < dist2(q.x, q.z, MAP.sites.B.cx, MAP.sites.B.cz) ? 'A' : 'B'; }
   const ps = state.players;
   for (let j = 0; j < ps.length; j++) {
     const m = ps[j];
@@ -209,11 +233,9 @@ function recordDeath(state, q) {
   }
 }
 
-// 10 Hz think (one bot). Bot i thinks when (state.tick + i) % 6 === 0.
 function think(state, p) {
   const a = p.ai, t = state.time, ps = state.players, gr = state.grenades;
   const tier = CONFIG.botTiers[p.tier] || CONFIG.botTiers[1];
-  // Blind: no vision, no target, aim error back to tier max.
   const blind = t < (p.blindUntil || 0);
   // Vision: 100 deg cone, 40 m, LOS vs world only, never through smoke.
   let best = null, bestD = 1e9;
@@ -232,11 +254,13 @@ function think(state, p) {
   if (best) {
     p.lastSeen = t; p.lastKnownX = best.x; p.lastKnownZ = best.z; a.memoryT = t + 4;
     if (a.targetId !== best.id) {
+      const fresh = a.targetId === -1;
       a.targetId = best.id; a.reactUntil = t + tier.reaction;
       a.aimErr = tier.aimErr;
       a.burstLeft = 3 + Math.floor(state.rng() * 3);
       a.burstPause = 0; a.fireCd = 0;
       a.aimH = state.rng() < 0.2 ? 1.5 : 1.05;
+      if (fresh && p.team === 'harbour' && state.intel) { const it = state.intel; it.count++; it.t = t; it.site = dist2(best.x, best.z, MAP.sites.A.cx, MAP.sites.A.cz) < dist2(best.x, best.z, MAP.sites.B.cx, MAP.sites.B.cz) ? 'A' : 'B'; }
     }
     a.visible = true;
     if (a.aimErr > 0.15) a.aimErr *= 0.96;
@@ -245,6 +269,14 @@ function think(state, p) {
   } else {
     a.visible = false;
     if (a.targetId >= 0 && t - p.lastSeen > 2) a.targetId = -1;
+  }
+  // HE at a target that just ducked out of sight (A5): flush the last known spot.
+  if (p.team === 'tide' && p.hasHE && !a.heUsed && !a.visible) {
+    const dtSeen = t - p.lastSeen;
+    const d2 = dist2(p.x, p.z, p.lastKnownX, p.lastKnownZ);
+    if (dtSeen >= 0.6 && dtSeen <= 2.5 && d2 >= 49 && d2 <= 576 && state.rng() < 0.35) {
+      if (gr.throwGrenade(state, p, 'he', p.lastKnownX, 1.0, p.lastKnownZ)) { a.heUsed = true; addEvent(state, 'callout', p.name + ': frag out'); }
+    }
   }
   // Hearing: newest noise only, +/-4 m error, 6 s memory, never own shots.
   const nz = state.noise;
@@ -262,7 +294,6 @@ function think(state, p) {
       }
     }
   }
-  // Running channel: validate, else cancel. Damage never cancels; moving does.
   if (a.mode === 'plant' || a.mode === 'defuse') {
     let bad = false;
     if (a.mode === 'plant') bad = !p.isCarrier || state.bomb.status !== 'carried' || !siteAt(p.x, p.z);
@@ -273,7 +304,6 @@ function think(state, p) {
       a.mode = 'move';
     } else { a.wantCrouch = true; return; }
   }
-  // Visible enemy: engage, or retreat to cover at low HP.
   if (a.visible) {
     if (p.hp < 30 && !(a.mode === 'retreat' && routeDone(a))) {
       if (a.mode !== 'retreat') {
@@ -281,8 +311,11 @@ function think(state, p) {
         addEvent(state, 'callout', p.name + ': falling back');
       }
       a.wantCrouch = false;
-    } else { a.mode = 'engage'; a.wantCrouch = true; }
-    return;
+      return;
+    }
+    // Staging/lurking bot ignores a distant contact (>15 m): keep walking
+    // to the stage point (or the other site) instead of duelling from spawn.
+    if (!((a.staging && !a.staged) || a.lurker) || bestD <= 15) { a.mode = 'engage'; a.wantCrouch = true; return; }
   }
   if (a.mode === 'retreat' && !routeDone(a)) return;
   // Bomb planted: nearest defender defuses, everyone else holds the site.
@@ -298,12 +331,24 @@ function think(state, p) {
       a.wantCrouch = true;
       return;
     }
-    if (bd2 > 16) go(p, bomb.x, bomb.z);
-    else toHold(a, t, 4);
+    if (p.team === 'tide') { postPlant(state, p); return; }
+    if (bd2 > 100) go(p, bomb.x, bomb.z); // hold the defuse approach 6-10 m out, eyes on the bomb
+    else toHold(a, t, 4, p, bomb.x, bomb.z);
     return;
   }
-  // Carrier at a clear site: plant (3.2 s, standing still, crouched).
-  if (p.isCarrier && bomb.status === 'carried') {
+  if (bomb.status === 'carried') state.bomb.pickupId = undefined;
+  if (bomb.status === 'dropped' && p.team === 'tide') {
+    let nearest = null, nd = Infinity;
+    for (let i = 0; i < ps.length; i++) { const q = ps[i]; if (!q.bot || q.team !== 'tide' || !q.alive) continue; const d2 = dist2(q.x, q.z, bomb.x, bomb.z); if (d2 < nd) { nd = d2; nearest = q; } }
+    const pid = state.bomb.pickupId;
+    if (nearest === p && (pid === undefined || pid === p.id || !state.players[pid] || !state.players[pid].alive)) {
+      state.bomb.pickupId = p.id;
+      routeTo(p, bomb.x, bomb.z); a.mode = 'move'; a.wantCrouch = false;
+      addEvent(state, 'callout', p.name + ': picking up bomb');
+      return;
+    }
+  }
+  if (p.isCarrier && bomb.status === 'carried' && !(a.staging && !a.staged)) {
     const s = siteAt(p.x, p.z);
     if (s && t - p.lastSeen > 3) {
       a.mode = 'plant'; a.wp.length = 0; p.planting = 0; bomb.plantT = 0;
@@ -312,19 +357,16 @@ function think(state, p) {
       return;
     }
   }
-  // Death callout: nearest defender rotates to the death site (BFS routes
-  // via the CT connector when that is the shortest path).
-  const ld = state.lastDeath;
-  if (ld && p.team === 'harbour' && !ld.called && t - ld.t < 10 && ld.team === 'harbour'
-    && nearestMate(state, 'harbour', ld.x, ld.z) === p
-    && dist2(p.x, p.z, ld.x, ld.z) > 100) {
-    ld.called = true;
-    go(p, ld.x, ld.z);
-    addEvent(state, 'callout', p.name + ': rotating to ' + (siteAt(ld.x, ld.z) || WP_NAMES[nearestWp(ld.x, ld.z)]));
+  const it = state.intel;
+  if (it && p.team === 'harbour' && it.count >= 2 && t - it.t < 3 && state.exec && !state.exec.rotated
+    && nearestMate(state, 'harbour', 0, 0) === p) {
+    state.exec.rotated = true;
+    const S = MAP.sites[it.site];
+    go(p, S.cx, S.cz);
+    addEvent(state, 'callout', p.name + ': rotating to ' + it.site);
     return;
   }
-  // Buddy: Rook (players[1]) follows the human, re-routing past 15 m.
-  if (p.id === 1) {
+  if (p.id === 1 && !(a.staging && !a.staged) && !a.lurker) {
     const h = ps[0];
     if (h.alive && dist2(p.x, p.z, h.x, h.z) > 225) {
       const wn = WP_NAMES[nearestWp(h.x, h.z)];
@@ -333,21 +375,18 @@ function think(state, p) {
       return;
     }
   }
-  // Investigate a heard stimulus; hold 3 s on arrival.
-  if (t < a.stimT) {
+  if (t < a.stimT && !(a.staging && !a.staged) && !a.lurker) {
     if (a.mode !== 'investigate') {
       a.mode = 'investigate'; routeTo(p, a.investX, a.investZ);
       addEvent(state, 'callout', p.name + ': checking noise');
-    } else if (routeDone(a)) toHold(a, t, 3);
+    } else if (routeDone(a)) toHold(a, t, 3, p, a.investX, a.investZ);
     return;
   }
-  // Memory: move to the last known enemy position (kept 4 s), then hold.
-  if (t < a.memoryT) {
+  if (t < a.memoryT && !(a.staging && !a.staged) && !a.lurker) {
     if (a.mode !== 'move' || routeDone(a)) routeTo(p, p.lastKnownX, p.lastKnownZ);
     a.mode = 'move'; a.wantCrouch = false;
     return;
   }
-  // Utility: Tide bots smoke the entry (~12 m) then flash the site (~10 m).
   if (p.team === 'tide' && a.mode === 'move' && gr && a.wp.length) {
     const goal = a.wp[a.wp.length - 1];
     if (goal === 'aSite' || goal === 'bSite') {
@@ -364,17 +403,18 @@ function think(state, p) {
       }
     }
   }
-  // Follow the team plan; hold at the destination until a stimulus arrives.
   if (a.mode === 'hold') {
     if (t >= a.holdUntil) a.holdUntil = t + 6;
-    a.aimYaw += 0.05; a.aimPitch = 0; // slow 360 deg scan while holding
+    a.aimYaw = a.lookYaw + Math.sin(t * 0.9 + p.id) * 0.18; a.aimPitch = 0; // small idle sweep, not a spin
     return;
   }
-  if (routeDone(a)) { toHold(a, t, 1e9); return; }
+  if (routeDone(a)) {
+    if (a.staging && !a.staged) { a.staged = true; const S = MAP.sites[a.stageSite || 'A']; toHold(a, t, 1e9, p, S.cx, S.cz); return; }
+    const li = Math.max(0, a.wpIndex - 2); const lw = MAP.waypoints[a.wp[li]]; toHold(a, t, 1e9, p, lw ? lw.x : undefined, lw ? lw.z : undefined); return;
+  }
   a.mode = 'move'; a.wantCrouch = false;
 }
 
-// Per-tick work: plant/defuse channels + burst fire.
 function tickBot(state, p, dt) {
   const a = p.ai, t = state.time;
   if (a.strafeT > 0) a.strafeT -= dt;
@@ -388,7 +428,7 @@ function tickBot(state, p, dt) {
       p.isCarrier = false; p.planting = 0;
       addEvent(state, 'plant', 'Bomb planted at ' + s);
       addEvent(state, 'callout', p.name + ': bomb planted at ' + s);
-      toHold(a, t, 8);
+      for (let i = 0; i < state.players.length; i++) { const q = state.players[i]; if (q.bot && q.team === 'tide' && q.alive) postPlant(state, q); }
     }
     return;
   }
@@ -401,11 +441,10 @@ function tickBot(state, p, dt) {
       state.roundWinner = 'harbour'; state.roundReason = 'bomb defused';
       addEvent(state, 'defuse', 'Bomb defused');
       addEvent(state, 'callout', p.name + ': bomb defused');
-      toHold(a, t, 8);
+      toHold(a, t, 8, p);
     }
     return;
   }
-  // Blind: channels above already ran; no firing, no purposeful action.
   if (t < (p.blindUntil || 0)) { a.firing = false; return; }  // Burst fire: engaging a visible target, past reaction, turned onto it.
   a.firing = false;
   if (a.mode !== 'engage' || !a.visible || a.targetId < 0) return;
@@ -413,6 +452,7 @@ function tickBot(state, p, dt) {
   const tgt = state.players[a.targetId];
   if (!tgt || !tgt.alive) return;
   if (Math.abs(wrapAng(a.aimYaw - p.yaw)) > 0.06) return; // still turning
+  if (p.vx * p.vx + p.vz * p.vz > 0.25) return; // counter-strafe: shoot only from a dead stop
   if (a.burstPause > 0) {
     a.burstPause -= dt;
     if (a.burstPause <= 0) {
@@ -432,7 +472,8 @@ function tickBot(state, p, dt) {
   const cp = Math.cos(pit);
   TMP_DIR.set(-Math.sin(yaw) * cp, Math.sin(pit), -Math.cos(yaw) * cp);
   const c = state.combat;
-  if (c && typeof c.shoot === 'function') c.shoot(state, p, TMP_DIR, w.spreadStill || 0.003, p.weapon);
+  const moving = p.vx * p.vx + p.vz * p.vz > 0.25;
+  if (c && typeof c.shoot === 'function') c.shoot(state, p, TMP_DIR, moving ? (w.spreadMove || 0.02) : (w.spreadStill || 0.003), p.weapon);
   else a.firing = true; // one-tick intent for the combat loop
   a.burstLeft--;
   if (a.burstLeft <= 0) {
@@ -463,6 +504,21 @@ export function updateAI(state, dt) {
     return;
   }
   if (state.aiRound !== state.round) { state.aiRound = state.round; assignRoutes(state); }
+  const ex = state.exec;
+  if (state.phase === 'live' && ex && !ex.executing) {
+    if (ex.liveStartT == null) ex.liveStartT = state.time;
+    let staged = 0, nonLurker = 0, lurker = null, caller = null;
+    for (let i = 0; i < ps.length; i++) { const p = ps[i]; if (!p.bot || p.team !== 'tide' || !p.alive) continue; if (p.ai.lurker) lurker = p; else { nonLurker++; if (p.ai.staged) { staged++; if (!caller) caller = p; } } }
+    if ((nonLurker > 0 && staged === nonLurker) || state.time - ex.liveStartT > ex.execAt) {
+      ex.executing = true;
+      const site = state.plans.tide === 'b-main' ? 'B' : 'A';
+      const cn = caller ? caller.name : (lurker ? lurker.name : null);
+      if (cn) addEvent(state, 'callout', cn + ': go go, executing ' + site);
+      for (let i = 0; i < ps.length; i++) { const p = ps[i]; if (!p.bot || p.team !== 'tide' || !p.alive) continue;
+        if (p.ai.lurker) { p.ai.walkOnly = false; const S = MAP.sites[site === 'A' ? 'B' : 'A']; routeTo(p, S.cx, S.cz); p.ai.mode = 'move'; p.ai.wantCrouch = false; }
+        else { p.ai.staged = false; p.ai.staging = false; routeVia(p, site === 'A' ? 'aEntry' : 'bEntry', site === 'A' ? 'aSite' : 'bSite'); p.ai.mode = 'move'; p.ai.wantCrouch = false; } }
+    }
+  }
   for (let i = 0; i < ps.length; i++) {
     const p = ps[i];
     if (!p.bot) continue;

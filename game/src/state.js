@@ -3,7 +3,6 @@ import { mulberry32 } from './utils.js';
 
 const TIDE_NAMES = ['You', 'Rook', 'Sable', 'Ivo', 'Marek'];
 const HARBOUR_NAMES = ['Kess', 'Brann', 'Yara', 'Doss', 'Pike'];
-// Bot tiers (§2.5): 1 elite, 2 good, 2 average per team.
 const TIDE_TIERS = [0, 0, 1, 1, 2];
 const HARBOUR_TIERS = [0, 1, 1, 2, 2];
 const TIDE_SPAWNS = [[-17.8, 13], [-16, 14], [-14.2, 13], [-18, 14], [-14, 14]];
@@ -49,8 +48,6 @@ export function addEvent(st, kind, text) {
 }
 
 export function resetMatch(st) {
-  // In-place reset: rebuilding players would break objects captured at boot
-  // by player.js / bots.js / main.js (same rule as resetRound / startMatch).
   st.tick = 0; st.time = 0; st.rng = mulberry32(st.seed);
   st.phase = 'menu'; st.phaseTime = 0; st.round = 1;
   st.score.tide = 0; st.score.harbour = 0;
@@ -70,7 +67,6 @@ export function resetMatch(st) {
     p.tagUntil = 0; p.punchDeg = 0; p.blindUntil = 0; p.roundKills = 0;
     p.isCarrier = false; p.planting = 0; p.defusing = 0;
     p.lastSeen = 0; p.lastKnownX = 0; p.lastKnownZ = 0;
-    // p.ai / p.group / p.hitMeshes are owned by ai.js / bots.js — untouched.
   }
   st.bomb = { status: 'carried', carrier: 1, site: null, x: 0, z: 0, plantT: 0, defuseT: 0, timer: 35 };
   st.events.length = 0; st.noise.length = 0;
@@ -78,8 +74,6 @@ export function resetMatch(st) {
   st.playerAds = false;
 }
 
-// Round reset (§2.2): respawn at team spawns, full HP, weapons/ammo kept,
-// grenade NOT kept, bomb to a random Tide bot (default carrier).
 export function resetRound(st) {
   for (let i = 0; i < st.players.length; i++) {
     const p = st.players[i];

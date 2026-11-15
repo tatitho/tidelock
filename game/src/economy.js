@@ -59,7 +59,6 @@ function util(state, p, price, ok, key, val, label) {
   return true;
 }
 
-// Buy is instant; a bought weapon refills its ammo. Returns true on success.
 export function buyItem(state, player, itemId) {
   if (!player || !player.alive) return false;
   if (itemId === 'plating' || itemId === 'armor') {
@@ -102,4 +101,6 @@ export function botBuy(state, bot) {
   else if (bot.team === 'harbour' && !bot.hasKit && bot.money >= KIT) buyItem(state, bot, 'kit');
   else if (!bot.hasSmoke && bot.money >= SMOKE) buyItem(state, bot, 'smoke');
   else if (bot.flashCount < 2 && bot.money >= FLASH) buyItem(state, bot, 'flash');
+  if (bot.armor >= 100 && !bot.helmet && bot.money >= HELMET) buyItem(state, bot, 'helmet');
+  if (bot.team === 'tide' && !bot.hasHE && bot.money >= 300) buyItem(state, bot, 'he');
 }

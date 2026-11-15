@@ -1,7 +1,7 @@
 // grenade.js — HE/smoke/flash: arced throw, bounce, fuse, pool of 4.
-// HE: 1.5 s fuse, 5 m blast (110 -> 15), friendly fire OFF. Smoke: 15 s
-// volume (r 2.4) on first bounce or 1.2 s fuse, blocks LOS. Flash: 1.2 s
-// fuse, blinds in 25 m with LOS (1.5 s facing, 0.5 s away). No alloc in update().
+// HE: 1.5 s fuse, 5 m blast (110 -> 15), friendly fire OFF. Smoke: 15 s,
+// r 2.4, blocks LOS. Flash: 1.2 s fuse, blinds in 25 m with LOS
+// (1.5 s facing, 0.5 s away). No alloc in update().
 import * as THREE from 'three';
 import { addEvent } from './state.js';
 import { CONFIG } from './config.js';
@@ -132,7 +132,6 @@ export function createGrenades(state, scene, colliders, effects) {
     return true;
   }
 
-  // Segment vs smoke spheres: blocked if closest approach < r. No alloc.
   function smokeBlocks(x1, y1, z1, x2, y2, z2) {
     const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
     const len2 = dx * dx + dy * dy + dz * dz;

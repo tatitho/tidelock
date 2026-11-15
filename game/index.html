@@ -27,7 +27,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--canvas);color:
 #phaseLabel{font-size:12px;letter-spacing:3px;color:var(--amber)}
 #minimapBox{position:absolute;top:10px;left:10px}#minimap{display:block;background:#0a121c;border:1px solid var(--steel)}
 #money{margin-top:4px;font-size:15px;font-weight:700;color:var(--amber)}
-#feedBox{position:absolute;top:10px;right:10px;text-align:right;width:300px}
+#feedBox{position:absolute;top:10px;right:10px;text-align:right;width:300px;overflow:hidden}
 #killFeed div,#radioLog div{font-size:13px;margin:2px 0;text-shadow:0 1px 2px #000}
 #radioLog div{color:var(--muted)}#killFeed .hs{color:var(--amber)}
 #healthBox{position:absolute;left:14px;bottom:14px;width:220px}
@@ -51,7 +51,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--canvas);color:
 #prompt{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);font-size:16px;background:rgba(14,22,34,.8);padding:8px 14px;border-radius:6px;display:none}
 #plantRing{width:180px;height:6px;background:#10161f;margin-top:6px;display:none}
 #plantRing>i{display:block;height:100%;background:var(--amber);width:0}
-.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,16,26,.82);z-index:10;text-align:center}
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,16,26,.75);z-index:10;text-align:center}
 .overlay.hidden{display:none}
 .card{max-width:640px;padding:28px 34px;background:var(--concrete);border:1px solid var(--steel);border-radius:10px}
 .card h1{font-size:42px;letter-spacing:6px;color:var(--amber)}
@@ -68,6 +68,7 @@ button{pointer-events:auto;margin-top:14px;padding:12px 28px;font-size:17px;font
 #roundBannerText{font-size:34px;letter-spacing:2px}
 #bannerSub{font-size:16px;color:var(--muted);margin-top:8px}
 #deathText,#matchText{font-size:18px;line-height:1.6}
+#matchText table{width:100%;border-collapse:collapse;margin-top:8px;font-size:15px}#matchText td{padding:3px 8px;border-bottom:1px solid rgba(233,230,223,.14)}#matchText td:first-child{text-align:left}#matchText tr.mvp td{color:#ffd75e;font-weight:700}
 #tip{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--muted);background:rgba(14,22,34,.9);padding:4px 10px;border-radius:6px}
 .wicon{display:block;margin-bottom:2px}
 #spectateBar{position:absolute;top:64px;left:50%;transform:translateX(-50%);font-size:14px;letter-spacing:1px;background:rgba(14,22,34,.85);border:1px solid var(--steel);border-radius:6px;padding:6px 12px;display:none;white-space:nowrap}
@@ -78,7 +79,7 @@ button{pointer-events:auto;margin-top:14px;padding:12px 28px;font-size:17px;font
 <body>
 <div id="game"></div>
 <div id="hud">
-  <div id="topbar"><div id="timer">1:40</div><div id="roundScore"><b id="scoreTide">0</b> Tide — Harbour <b id="scoreHarbour">0</b></div><div id="phaseLabel">BUY</div></div>
+  <div id="topbar"><div id="timer">1:40</div><div id="roundScore"><b id="scoreTide">0</b> Tide — Harbour <b id="scoreHarbour">0</b></div><div id="roundLabel">ROUND 1 OF 9</div><div id="phaseLabel">BUY</div></div>
   <div id="spectateBar"></div>
   <div id="minimapBox" class="panel"><canvas id="minimap" width="180" height="140"></canvas><div id="money">$800</div></div>
   <div id="feedBox"><div id="killFeed"></div><div id="radioLog"></div></div>

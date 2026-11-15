@@ -10,7 +10,6 @@ export function createMinimap(canvas) {
       g.fillStyle = '#0e1622'; g.fillRect(0, 0, W, H);
       g.strokeStyle = '#3a4750'; g.lineWidth = 2;
       g.strokeRect(1, 1, W - 2, H - 2);
-      // Sites.
       const sites = [['A', -15, -11, '#f0a830'], ['B', 15, -11, '#2e8f86']];
       for (let i = 0; i < 2; i++) {
         const s = sites[i];
@@ -19,11 +18,9 @@ export function createMinimap(canvas) {
         g.globalAlpha = 1; g.fillStyle = s[3];
         g.font = 'bold 11px system-ui'; g.fillText(s[0], X(s[1]) - 4, Z(s[2]) + 4);
       }
-      // Lane callouts.
       g.fillStyle = '#8fa3ad'; g.font = '9px system-ui'; g.textAlign = 'center';
       for (let i = 0; i < 4; i++) g.fillText(LABELS[i][0], X(LABELS[i][1]), Z(LABELS[i][2]) + 3);
       g.textAlign = 'start';
-      // Bomb: amber dot when planted or dropped.
       if (state.bomb && (state.bomb.status === 'planted' || state.bomb.status === 'dropped')) {
         g.fillStyle = '#f0a830';
         g.beginPath(); g.arc(X(state.bomb.x), Z(state.bomb.z), 4, 0, 6.29); g.fill();
@@ -36,7 +33,6 @@ export function createMinimap(canvas) {
         g.fillStyle = p.alive ? '#3ddc84' : '#8a8a8a';
         g.beginPath(); g.arc(X(p.x), Z(p.z), 3, 0, 6.29); g.fill();
       }
-      // Player: white arrow.
       const me = ps[state.playerId];
       if (me) {
         g.save(); g.translate(X(me.x), Z(me.z)); g.rotate(-me.yaw);

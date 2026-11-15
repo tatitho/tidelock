@@ -1,9 +1,7 @@
-// player.js — human movement. Starter accel/friction/gravity core, extended
-// with ADS slow (state.playerAds x0.65, set by weapon.js), a walk key, eye
-// height lerp and a noise output bots can hear: running 8 m, walking 3 m,
-// crouched 0 m. Axis-separated AABB collision vs Box3 colliders. No
+// player.js — human movement: accel/friction/gravity core + ADS slow
+// (x0.65), walk key, eye-height lerp, noise bots can hear (run 8 m,
+// walk 3 m, crouch 0 m). Axis-separated AABB vs Box3 colliders. No
 // allocation in step(): one module temp Box3, plain numbers otherwise.
-// Position/velocity live on state.players[0] (feet y, yaw 0 faces -z).
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { WEAPONS } from './weapons.js';
@@ -38,9 +36,6 @@ export function createPlayer(state, colliders) {
     return null;
   }
 
-  // Spawn safety: a spawn point may sit a few cm inside a crate/wall (map
-  // data). If already penetrating, push out along the smallest axis so the
-  // player is never wedged on the first step. Only fires on real overlap.
   function depenetrate() {
     const hit = overlaps();
     if (!hit) return;
@@ -64,7 +59,6 @@ export function createPlayer(state, colliders) {
 
   function step(dt, keys) {
     depenetrate();
-    // Aim punch: a landed hit kicks the view up once, then clears.
     if (p.punchDeg) {
       p.pitch += p.punchDeg * Math.PI / 180;
       p.punchDeg = 0;
@@ -79,7 +73,6 @@ export function createPlayer(state, colliders) {
     if (keys.has('KeyA') || keys.has('ArrowLeft')) ix -= 1;
     if (keys.has('KeyD') || keys.has('ArrowRight')) ix += 1;
     moving = ix !== 0 || iz !== 0;
-    // Wish direction: forward (-sin yaw, -cos yaw), right (cos yaw, -sin yaw).
     const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
     let wx = -sy * -iz + cy * ix;
     let wz = -cy * -iz + -sy * ix;
@@ -102,7 +95,6 @@ export function createPlayer(state, colliders) {
     if (keys.has('Space') && p.onGround) { p.vy = JUMP; p.onGround = false; }
     p.vy -= GRAVITY * dt;
     if (p.vy < -30) p.vy = -30;
-    // Axis-separated AABB: move one axis, clamp out of any collider, stop.
     p.x += p.vx * dt;
     let hit = overlaps();
     if (hit) {

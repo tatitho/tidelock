@@ -1,5 +1,4 @@
 // WebAudio synth SFX only: oscillators + filtered noise, no files, no network.
-// Lazy-init on first user gesture; master gain 0.5; M mutes.
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {

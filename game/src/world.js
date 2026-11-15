@@ -3,12 +3,8 @@ import { MAP } from './map.js';
 import { PALETTE as P } from './palette.js';
 
 // world.js — TIDELOCK visuals only: lights, dusk sky, canvas textures
-// (corrugation / asphalt / hazard / water) + AI textures vendored under
-// game/textures/ (Pollinations.ai FLUX, free public API, generated
-// 2026-11-15 for this entry; any AI texture that fails to load falls back
-// to the procedural one for that surface). No gameplay, no map layout
-// changes: colliders + shootables are built from MAP exactly as before.
-// Deterministic: no randomness or wall-clock time anywhere in this file.
+// (corrugation / asphalt / hazard / water) + vendored AI container photos.
+// Deterministic, no randomness or wall-clock time anywhere in this file.
 
 function canvasTex(size, draw, repeat) {
   const c = document.createElement('canvas');
@@ -21,10 +17,7 @@ function canvasTex(size, draw, repeat) {
   return t;
 }
 
-// --- Sky: procedural dusk gradient on a 512 canvas (top = zenith, y 256 =
-// horizon). Deep blue zenith -> teal mid -> warm amber horizon band, low sun
-// glow off-axis NW (u .86) so it sits left of centre facing north, never
-// behind the top-centre HUD timer; thin dark cloud bands + faint stars.
+// --- Sky: procedural dusk gradient on a 512 canvas (top = zenith).
 const SKY = canvasTex(512, (g, s) => {
   const gr = g.createLinearGradient(0, 0, 0, s);
   gr.addColorStop(0, P.skyTop); gr.addColorStop(0.40, '#16283e');
@@ -42,14 +35,12 @@ const SKY = canvasTex(512, (g, s) => {
     g.beginPath(); g.ellipse((i * 197 + 30) % s, 62 + (i * 53) % 168, 90 + (i * 47) % 130, 5 + (i % 4) * 2, 0, 0, 6.283); g.fill();
   }
 });
-// Moon: small bright disc + soft glow ring in one radial-gradient texture.
 const MOON = canvasTex(128, (g, s) => {
   const mg = g.createRadialGradient(64, 64, 6, 64, 64, 62);
   mg.addColorStop(0, '#ebf2ff'); mg.addColorStop(0.28, 'rgba(215,228,255,0.95)');
   mg.addColorStop(0.45, 'rgba(160,190,230,0.25)'); mg.addColorStop(1, 'rgba(160,190,230,0)');
   g.fillStyle = mg; g.fillRect(0, 0, s, s);
 });
-// Hazard striping (amber/black diagonal) for the site-entrance thresholds.
 const HAZARD = canvasTex(128, (g, s) => {
   g.fillStyle = '#151515'; g.fillRect(0, 0, s, s);
   g.fillStyle = P.amber;
@@ -76,8 +67,6 @@ const WATER_TEX = canvasTex(128, (g, s) => {
 }, 6);
 
 // --- Container corrugation: one 128 px tile per colour, 8 ribs per tile.
-// Tile = 2.4 m, so ribs read ~0.3 m; per-box repeat (below) keeps that true
-// on every face size. Rust streaks + a stencilled number per colour.
 const CORR_LABEL = { rust: 'TDL-07', ochre: 'TDL-12', tealDark: 'TDL-03', slate: 'TDL-21' };
 const CORR_TEX = {};
 function corrTex(name) {
@@ -107,11 +96,12 @@ function matFor(name, w, h, d, ai) {
   if (CONTAINER[name]) {
     const key = name + '|' + w + '|' + h + '|' + d;
     if (!MATS[key]) {
-      // AI wall photo carries its own rust/ochre or teal/slate colours, so
-      // it replaces the tinted procedural tile 1:1 per face (no repeat).
+      // AI photo replaces the tinted tile, re-tiled every 2.4 m.
       const tex = (name === 'rust' || name === 'ochre') ? (ai && ai.amber) : (ai && ai.teal);
       if (tex) {
         const t = tex.clone(); t.needsUpdate = true;
+        t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping;
+        t.repeat.set(Math.max(w, d) / 2.4, h / 2.4);
         MATS[key] = new THREE.MeshStandardMaterial({ color: 0xffffff, map: t, roughness: 0.8, metalness: 0.25 });
       } else {
         const t = corrTex(name).clone();
@@ -121,34 +111,23 @@ function matFor(name, w, h, d, ai) {
     }
     return MATS[key];
   }
-  if (name === 'concrete' && ai && ai.wall) {
-    const key = 'wall|' + w + '|' + h + '|' + d;
-    if (!MATS[key]) {
-      const t = ai.wall.clone(); t.needsUpdate = true;
-      t.repeat.set(Math.max(1, Math.max(w, d) / 4), 1);
-      MATS[key] = new THREE.MeshStandardMaterial({ color: 0xffffff, map: t, roughness: 0.85, metalness: 0.15 });
-    }
-    return MATS[key];
-  }
   if (MATS[name]) return MATS[name];
   const m = new THREE.MeshStandardMaterial({ color: P[name] || P.concrete, roughness: 0.85, metalness: 0.15 });
   if (name === 'concrete') m.map = NOISE;
   MATS[name] = m; return m;
 }
-const AI_FILES = { sky: 'sky.jpg', amber: 'container-amber.jpg', teal: 'container-teal.jpg', ground: 'asphalt.jpg', wall: 'gatewall.jpg' };
-// Load the vendored AI textures; each resolves to null on any failure so
-// the caller falls back per surface. Mirrored wrap on the ground hides
-// tile seams; the sky keeps repeat 1 (it is one equirect panorama).
+const AI_FILES = { amber: 'container-amber.jpg', teal: 'container-teal.jpg' };
+// Load the vendored AI container photos; each resolves to null on failure.
 async function loadAI(renderer) {
   const loader = new THREE.TextureLoader();
   const aniso = renderer ? Math.min(8, renderer.capabilities.getMaxAnisotropy()) : 1;
-  const one = (name, mirror) => loader.loadAsync('./textures/' + AI_FILES[name]).then(t => {
+  const one = (name) => loader.loadAsync('./textures/' + AI_FILES[name]).then(t => {
     t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = aniso;
-    t.wrapS = t.wrapT = mirror ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
     return t;
   }).catch(() => null);
-  const [sky, amber, teal, ground, wall] = await Promise.all([one('sky'), one('amber'), one('teal'), one('ground', true), one('wall')]);
-  return { sky, amber, teal, ground, wall };
+  const [amber, teal] = await Promise.all([one('amber'), one('teal')]);
+  return { amber, teal };
 }
 const GEO = new THREE.BoxGeometry(1, 1, 1);
 
@@ -168,9 +147,7 @@ export async function createWorld(state, scene, renderer) {
       new THREE.Vector3(x + w / 2, y + h / 2, z + d / 2)));
     return mesh;
   };
-  // Asphalt: AI top-down photo (mirrored 4x3, same layout as before) or
-  // the procedural tile when it failed to load.
-  const groundTex = ai.ground || canvasTex(256, (g, s) => {
+  const groundTex = canvasTex(256, (g, s) => {
     g.fillStyle = '#1d2226'; g.fillRect(0, 0, s, s);
     for (let i = 0; i < 300; i++) { const v = 22 + (i * 29 % 18); g.fillStyle = 'rgb(' + v + ',' + (v + 4) + ',' + (v + 7) + ')'; g.fillRect((i * 47) % s, (i * 83) % s, 3, 3); }
     for (let i = 0; i < 4; i++) {
@@ -190,7 +167,6 @@ export async function createWorld(state, scene, renderer) {
     const b = MAP.boxes[i];
     addBox(b.x, b.y, b.z, b.w, b.h, b.d, b.mat || 'concrete', true);
   }
-  // Hazard thresholds: A entry, B entry, gate mouth.
   const hazMat = new THREE.MeshStandardMaterial({ map: HAZARD, roughness: 0.7, metalness: 0.1 });
   const hazSpots = [[-12, -6.5, 2.6], [12, -6.5, 2.6], [-15, -8.3, 3.6]];
   for (let i = 0; i < 3; i++) {
@@ -198,8 +174,6 @@ export async function createWorld(state, scene, renderer) {
     hz.rotation.x = -Math.PI / 2; hz.position.set(hazSpots[i][0], 0.02, hazSpots[i][1]);
     hz.receiveShadow = true; scene.add(hz);
   }
-  // Site A/B structures already exist as MAP.boxes (piers, beam,
-  // mechanism, pump house, skid, gantry); here only lamps, door, pipes.
   const a = MAP.sites.A;
   const lampA = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.18),
     new THREE.MeshStandardMaterial({ color: 0xf0a830, emissive: 0xf0a830, emissiveIntensity: 2 }));
@@ -217,7 +191,6 @@ export async function createWorld(state, scene, renderer) {
   const lampB = lampA.clone();
   lampB.material = new THREE.MeshStandardMaterial({ color: 0x2e8f86, emissive: 0x2e8f86, emissiveIntensity: 2 });
   lampB.position.set(b.cx, 2.6, b.cz - 2.0); scene.add(lampB);
-  // Site signage + bay numbers: canvas-texture planes, decoration only.
   const textPlane = (txt, w, h, color) => {
     const t = canvasTex(256, (g) => {
       g.fillStyle = 'rgba(10,16,26,0.85)'; g.fillRect(0, 0, 256, 256);
@@ -227,6 +200,8 @@ export async function createWorld(state, scene, renderer) {
   };
   const sA = textPlane('A', 2.4, 1.2, '#f0a830'); sA.position.set(a.cx, 4.0, -12.35); scene.add(sA);
   const sB = textPlane('B', 1.8, 0.9, '#2e8f86'); sB.position.set(b.cx, 1.6, -13.2); scene.add(sB);
+  const rA = textPlane('A-LONG →', 2.4, 0.6, '#e9e6df'); rA.position.set(-19, 2.2, 6); scene.add(rA);
+  const rM = textPlane('MID →', 1.8, 0.6, '#e9e6df'); rM.position.set(0, 2.2, 10); scene.add(rM);
   const s1 = textPlane('01', 0.9, 0.45, '#e9e6df'); s1.position.set(-3.5, 1.8, 3.06); scene.add(s1);
   const s2 = textPlane('02', 0.9, 0.45, '#e9e6df'); s2.position.set(3.5, 1.8, 3.06); scene.add(s2);
   const craneMat = new THREE.MeshBasicMaterial({ color: 0x0a1018 });
@@ -239,26 +214,18 @@ export async function createWorld(state, scene, renderer) {
   }
   const water = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshStandardMaterial({ map: WATER_TEX, color: 0x1d4a52, roughness: 0.25, metalness: 0.6 }));
   water.rotation.x = -Math.PI / 2; water.position.set(10, -0.5, -10); scene.add(water);
-  // Sky: AI equirect panorama on the dome (it carries its own moon, so
-  // the procedural moon plane is skipped), else the gradient + moon.
-  const skyTex = ai.sky || SKY;
-  if (ai.sky) ai.sky.mapping = THREE.EquirectangularReflectionMapping;
   const sky = new THREE.Mesh(new THREE.SphereGeometry(120, 24, 16),
-    new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false }));
+    new THREE.MeshBasicMaterial({ map: SKY, side: THREE.BackSide, fog: false }));
   scene.add(sky);
-  if (!ai.sky) {
-    const moon = new THREE.Mesh(new THREE.PlaneGeometry(16, 16),
-      new THREE.MeshBasicMaterial({ map: MOON, transparent: true, fog: false, depthWrite: false }));
-    moon.position.set(55, 68, -75); moon.lookAt(0, 0, 0); scene.add(moon);
-  }
+  const moon = new THREE.Mesh(new THREE.PlaneGeometry(16, 16),
+    new THREE.MeshBasicMaterial({ map: MOON, transparent: true, fog: false, depthWrite: false }));
+  moon.position.set(55, 68, -75); moon.lookAt(0, 0, 0); scene.add(moon);
   const puddleMat = new THREE.MeshStandardMaterial({ color: 0x1a2e38, roughness: 0.08, metalness: 0.95 });
   const puddles = [[-8, 6], [6, -6], [-2, 10], [12, 8]];
   for (let i = 0; i < 4; i++) {
     const p = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.4), puddleMat);
     p.rotation.x = -Math.PI / 2; p.position.set(puddles[i][0], 0.01, puddles[i][1]); scene.add(p);
   }
-  // Lighting: blue-hour key + warm fill, lifted mid-tones. One shadow map
-  // only (the key, 2048, tight frustum); the fill casts no shadows.
   scene.add(new THREE.HemisphereLight(0x9fc0e0, 0x141c20, 1.5));
   const key = new THREE.DirectionalLight(0xcfe4ff, 2.8);
   key.position.set(-18, 30, -12); key.castShadow = true;
@@ -271,7 +238,7 @@ export async function createWorld(state, scene, renderer) {
   const lightA = new THREE.PointLight(0xf0a830, 20, 16); lightA.position.set(a.cx, 3.6, a.cz); scene.add(lightA);
   const lightB = new THREE.PointLight(0x2e8f86, 20, 16); lightB.position.set(b.cx, 2.6, b.cz); scene.add(lightB);
   const lightAin = new THREE.PointLight(0xffb347, 18, 12); lightAin.position.set(a.cx, 2.0, a.cz + 0.5); scene.add(lightAin);
-  const lightBin = new THREE.PointLight(0x35b5a8, 10, 9); lightBin.position.set(b.cx, 2.0, b.cz + 0.5); scene.add(lightBin);
+  const lightBin = new THREE.PointLight(0x35b5a8, 14, 9); lightBin.position.set(b.cx, 2.0, b.cz + 0.5); scene.add(lightBin);
   let t = 0;
   return {
     colliders, shootables,
