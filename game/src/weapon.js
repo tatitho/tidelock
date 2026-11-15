@@ -141,6 +141,9 @@ export function createWeaponView(camera, state) {
     state.players[0].mag--;
     return { pitch: w._kick, yaw };
   };
+  // Staged ?shot= captures render without stepping the weapon, so the
+  // 50 ms flash would freeze at full opacity as a pale card on the muzzle.
+  w.clearFlash = function () { flash.material.opacity = 0; flashLight.intensity = 0; w._flashT = 0; };
   w.reload = function () {
     const p = state.players[0];
     if (!p || w._reloadT > 0 || w._switchT > 0 || p.mag >= weapon().mag || p.reserve <= 0) return false;

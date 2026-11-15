@@ -48,7 +48,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.05, 200);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
-const world = createWorld(state, scene);
+const world = await createWorld(state, scene, renderer);
 const effects = createEffects(state, scene);
 const bots = createBots(state, scene);
 const combat = createCombat(state, world.shootables, effects);
@@ -432,6 +432,7 @@ function stageShot(name) {
       combat.shoot(state, me, TMP_A, 0, 'ar77');
       player.recoil(kick.pitch, kick.yaw);
     }
+    weapon.clearFlash(); // no frozen flash card in the capture
   } else if (name === 'plant') {
     base(3, 2, 1, 'live', 42, 4650, 30);
     me.x = -15; me.z = -7; me.yaw = 0.15; me.pitch = 0;
