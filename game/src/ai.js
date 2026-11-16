@@ -4,12 +4,12 @@
 // ai.js DECIDES, bots.js EXECUTES. Routes: all-pairs next-hop over MAP.edges.
 import { Vector3 } from 'three';
 import { CONFIG } from './config.js';
-import { MAP } from './map.js';
+import { MAP, nearestCallout } from './map.js';
 import { WEAPONS } from './weapons.js';
 import { addEvent } from './state.js';
 import { hasLOS } from './combat.js';
 import { dist2 } from './utils.js';
-import * as rounds from './rounds.js'; // defuseTimeFor lands with Agent C
+import * as rounds from './rounds.js';
 
 const PI = Math.PI, DEG = PI / 180;
 const TMP_DIR = new Vector3();
@@ -21,13 +21,16 @@ function wrapAng(a) {
   return a;
 }
 
+// Range-banded bursts: 2 shots past 30 m, 3-5 past 15 m, 6-12 up close.
+function burstN(rng, d) { return d > 30 ? 2 : d > 15 ? 3 + Math.floor(rng() * 3) : 6 + Math.floor(rng() * 7); }
+
 function ensureAI(p) {
   if (p.ai) return p.ai;
   p.ai = { mode: 'buy', wp: [], wpIndex: 0, holdUntil: 0, targetId: -1, reactUntil: 0,
     burstLeft: 0, burstPause: 0, investX: 0, investZ: 0, memoryT: 0, aimErr: 3,
     aimYaw: 0, aimPitch: 0, wantCrouch: false, firing: false, fireCd: 0,
     visible: false, lastNoiseT: 0, stimT: 0, strafeX: 0, strafeZ: 0,
-    strafeT: 0, followWp: '', aimH: 1.05 };
+    strafeT: 0, followWp: '', aimH: 1.05, plantCommitted: false };
   return p.ai;
 }
 
@@ -165,7 +168,7 @@ export function pickPlan(state, team) {
 
 function assignRoutes(state) {
   state.intel = { site: null, count: 0, t: 0 };
-  state.exec = { executing: false, execAt: 30 + state.rng() * 10, lurkerId: -1, rotated: false, liveStartT: null };
+  state.exec = { executing: false, execAt: 20 + state.rng() * 10, lurkerId: -1, rotated: false, liveStartT: null }; // gather-or-timeout: execute by 30 s
   const ps = state.players;
   if (!state.plans) state.plans = {};
   if (!state.plans.tide) pickPlan(state, 'tide');
@@ -179,19 +182,18 @@ function assignRoutes(state) {
     const p = ps[i];
     if (!p.bot || !p.alive) continue;
     const a = ensureAI(p);
-    a.staged = false; a.staging = false; a.lurker = false; a.walkOnly = false; a.heUsed = false; a.postSpot = null;
+    a.staged = false; a.staging = false; a.lurker = false; a.walkOnly = false; a.heUsed = false; a.postSpot = null; a.plantCommitted = false;
     if (p.team === 'tide') {
       if (p.id === lurkerId) {
-        a.lurker = true; a.walkOnly = true; // quiet walk to the other site via mid
-        routeVia(p, 'midDoors', otherSite === 'A' ? 'aSite' : 'bSite');
+        a.lurker = true; a.walkOnly = true; // quiet walk to the other site over the gantry
+        routeVia(p, 'gantry', otherSite === 'A' ? 'aSite' : 'bSite');
       } else {
         a.staging = true; a.stageSite = mainSite;
-        const E = MAP.waypoints[mainSite === 'A' ? 'aEntry' : 'bEntry'];
-        routeTo(p, E.x, E.z);
+        routeVia(p, mainSite === 'A' ? 'aShort1' : 'bShort1', mainSite === 'A' ? 'aEntry' : 'bEntry');
       }
     } else {
       const lanes = LANES.harbour[state.plans.harbour];
-      const L = lanes[Math.min(p.id - 5, lanes.length - 1)].split('>');
+      const L = lanes[Math.min(p.id % 5, lanes.length - 1)].split('>');
       routeVia(p, L[0], L[1] || L[0]);
     }
     a.targetId = -1; a.visible = false; a.firing = false; a.burstLeft = 0;
@@ -220,14 +222,13 @@ function toHold(a, t, dur, p, lookX, lookZ) {
   a.lookYaw = lookX === undefined ? a.aimYaw : Math.atan2(-(lookX - p.x), -(lookZ - p.z));
 }
 
-// Death: radio callout + intel for the rotation discipline.
 function recordDeath(state, q) {
   if (q.team === 'harbour' && state.intel) { const it = state.intel; it.count++; it.t = state.time; it.site = dist2(q.x, q.z, MAP.sites.A.cx, MAP.sites.A.cz) < dist2(q.x, q.z, MAP.sites.B.cx, MAP.sites.B.cz) ? 'A' : 'B'; }
   const ps = state.players;
   for (let j = 0; j < ps.length; j++) {
     const m = ps[j];
     if (m.bot && m.team === q.team && m.alive) {
-      addEvent(state, 'callout', m.name + ': ' + q.name + ' down at ' + WP_NAMES[nearestWp(q.x, q.z)]);
+      addEvent(state, 'callout', m.name + ': ' + q.name + ' down at ' + nearestCallout(q.x, q.z));
       break;
     }
   }
@@ -235,11 +236,11 @@ function recordDeath(state, q) {
 
 function think(state, p) {
   const a = p.ai, t = state.time, ps = state.players, gr = state.grenades;
-  const tier = CONFIG.botTiers[p.tier] || CONFIG.botTiers[1];
+  const sk = p.skill || 1; // continuous skill 0.82-1.12: reaction + aim error scale with it
   const blind = t < (p.blindUntil || 0);
   // Vision: 100 deg cone, 40 m, LOS vs world only, never through smoke.
   let best = null, bestD = 1e9;
-  if (blind) { a.visible = false; a.targetId = -1; a.aimErr = tier.aimErr; }
+  if (blind) { a.visible = false; a.targetId = -1; a.aimErr = 4.3 / sk; }
   else for (let i = 0; i < ps.length; i++) {
     const e = ps[i];
     if (e.team === p.team || !e.alive) continue;
@@ -255,15 +256,15 @@ function think(state, p) {
     p.lastSeen = t; p.lastKnownX = best.x; p.lastKnownZ = best.z; a.memoryT = t + 4;
     if (a.targetId !== best.id) {
       const fresh = a.targetId === -1;
-      a.targetId = best.id; a.reactUntil = t + tier.reaction;
-      a.aimErr = tier.aimErr;
-      a.burstLeft = 3 + Math.floor(state.rng() * 3);
+      a.targetId = best.id; a.reactUntil = t + (0.24 + state.rng() * 0.18) / sk;
+      a.aimErr = 4.3 / sk;
+      a.burstLeft = burstN(state.rng, bestD);
       a.burstPause = 0; a.fireCd = 0;
-      a.aimH = state.rng() < 0.2 ? 1.5 : 1.05;
+      a.aimH = sk > 0.95 && bestD < 22 ? 1.5 : 1.05; // skilled bots take the head inside 22 m
       if (fresh && p.team === 'harbour' && state.intel) { const it = state.intel; it.count++; it.t = t; it.site = dist2(best.x, best.z, MAP.sites.A.cx, MAP.sites.A.cz) < dist2(best.x, best.z, MAP.sites.B.cx, MAP.sites.B.cz) ? 'A' : 'B'; }
     }
     a.visible = true;
-    if (a.aimErr > 0.15) a.aimErr *= 0.96;
+    a.aimErr += (0.35 / sk - a.aimErr) * (1 - Math.exp(-0.22 * sk)); // error settles toward 0.35 deg/skill
     a.aimYaw = Math.atan2(-(best.x - p.x), -(best.z - p.z));
     a.aimPitch = Math.atan2(a.aimH - (p.crouch ? 1 : 1.5), Math.max(1, bestD));
   } else {
@@ -296,13 +297,23 @@ function think(state, p) {
   }
   if (a.mode === 'plant' || a.mode === 'defuse') {
     let bad = false;
-    if (a.mode === 'plant') bad = !p.isCarrier || state.bomb.status !== 'carried' || !siteAt(p.x, p.z);
+    if (a.mode === 'plant') bad = !p.isCarrier || state.bomb.status !== 'carried' || !siteAt(p.x, p.z) || (a.plantCommitted && bestD < 6);
     else bad = state.bomb.status !== 'planted' || dist2(p.x, p.z, state.bomb.x, state.bomb.z) > 9;
     if (bad) {
-      if (a.mode === 'plant') { p.planting = 0; state.bomb.plantT = 0; }
+      if (a.mode === 'plant') { p.planting = 0; state.bomb.plantT = 0; a.plantCommitted = false; }
       else { p.defusing = 0; state.bomb.defuseT = 0; }
       a.mode = 'move';
     } else { a.wantCrouch = true; return; }
+  }
+  // Carrier commits: plant on site unless an enemy is within 12 m; only a <6 m enemy interrupts the plant.
+  if (p.isCarrier && state.bomb.status === 'carried' && !(a.staging && !a.staged)) {
+    const s = siteAt(p.x, p.z);
+    if (s && bestD > 12) {
+      a.mode = 'plant'; a.wp.length = 0; p.planting = 0; state.bomb.plantT = 0; a.plantCommitted = true;
+      a.wantCrouch = true;
+      addEvent(state, 'callout', p.name + ': planting at ' + s);
+      return;
+    }
   }
   if (a.visible) {
     if (p.hp < 30 && !(a.mode === 'retreat' && routeDone(a))) {
@@ -313,9 +324,9 @@ function think(state, p) {
       a.wantCrouch = false;
       return;
     }
-    // Staging/lurking bot ignores a distant contact (>15 m): keep walking
+    // Staging/lurking bot ignores a distant contact (>25 m): keep walking
     // to the stage point (or the other site) instead of duelling from spawn.
-    if (!((a.staging && !a.staged) || a.lurker) || bestD <= 15) { a.mode = 'engage'; a.wantCrouch = true; return; }
+    if (!((a.staging && !a.staged) || a.lurker) || bestD <= 25 || t < (p.tagUntil || 0)) { a.mode = 'engage'; a.wantCrouch = true; return; } // staging bots fight back at 25 m, not just when shot
   }
   if (a.mode === 'retreat' && !routeDone(a)) return;
   // Bomb planted: nearest defender defuses, everyone else holds the site.
@@ -332,7 +343,7 @@ function think(state, p) {
       return;
     }
     if (p.team === 'tide') { postPlant(state, p); return; }
-    if (bd2 > 100) go(p, bomb.x, bomb.z); // hold the defuse approach 6-10 m out, eyes on the bomb
+    if (bd2 > 100) go(p, bomb.x, bomb.z);
     else toHold(a, t, 4, p, bomb.x, bomb.z);
     return;
   }
@@ -345,15 +356,6 @@ function think(state, p) {
       state.bomb.pickupId = p.id;
       routeTo(p, bomb.x, bomb.z); a.mode = 'move'; a.wantCrouch = false;
       addEvent(state, 'callout', p.name + ': picking up bomb');
-      return;
-    }
-  }
-  if (p.isCarrier && bomb.status === 'carried' && !(a.staging && !a.staged)) {
-    const s = siteAt(p.x, p.z);
-    if (s && t - p.lastSeen > 3) {
-      a.mode = 'plant'; a.wp.length = 0; p.planting = 0; bomb.plantT = 0;
-      a.wantCrouch = true;
-      addEvent(state, 'callout', p.name + ': planting at ' + s);
       return;
     }
   }
@@ -405,7 +407,7 @@ function think(state, p) {
   }
   if (a.mode === 'hold') {
     if (t >= a.holdUntil) a.holdUntil = t + 6;
-    a.aimYaw = a.lookYaw + Math.sin(t * 0.9 + p.id) * 0.18; a.aimPitch = 0; // small idle sweep, not a spin
+    a.aimYaw = a.lookYaw + Math.sin(t * 0.9 + p.id) * 0.18; a.aimPitch = 0;
     return;
   }
   if (routeDone(a)) {
@@ -445,19 +447,25 @@ function tickBot(state, p, dt) {
     }
     return;
   }
-  if (t < (p.blindUntil || 0)) { a.firing = false; return; }  // Burst fire: engaging a visible target, past reaction, turned onto it.
+  if (t < (p.blindUntil || 0)) { a.firing = false; return; }
   a.firing = false;
   if (a.mode !== 'engage' || !a.visible || a.targetId < 0) return;
   if (t < a.reactUntil) return;
   const tgt = state.players[a.targetId];
   if (!tgt || !tgt.alive) return;
-  if (Math.abs(wrapAng(a.aimYaw - p.yaw)) > 0.06) return; // still turning
+  const d = Math.hypot(tgt.x - p.x, tgt.z - p.z);
+  // Fire discipline — stopping to aim pays: fire only when aligned, steady
+  // and settled. Yaw gate 2 deg + 17/dist, pitch gate 2.9 deg, cone gate.
+  if (Math.abs(wrapAng(a.aimYaw - p.yaw)) > (2 + 17 / d) * DEG) return;
+  const pitT = Math.atan2(a.aimH - (p.crouch ? 1 : 1.5), Math.max(1, d));
+  if (Math.abs(wrapAng(pitT - p.pitch)) > 2.9 * DEG) return;
+  if (a.aimErr > Math.max(1.15, 69 / d)) return;
   if (p.vx * p.vx + p.vz * p.vz > 0.25) return; // counter-strafe: shoot only from a dead stop
   if (a.burstPause > 0) {
     a.burstPause -= dt;
     if (a.burstPause <= 0) {
-      a.burstLeft = 3 + Math.floor(state.rng() * 3);
-      a.aimH = state.rng() < 0.2 ? 1.5 : 1.05;
+      a.burstLeft = burstN(state.rng, d);
+      a.aimH = (p.skill || 1) > 0.95 && d < 22 ? 1.5 : 1.05;
     }
     return;
   }
@@ -474,11 +482,11 @@ function tickBot(state, p, dt) {
   const c = state.combat;
   const moving = p.vx * p.vx + p.vz * p.vz > 0.25;
   if (c && typeof c.shoot === 'function') c.shoot(state, p, TMP_DIR, moving ? (w.spreadMove || 0.02) : (w.spreadStill || 0.003), p.weapon);
-  else a.firing = true; // one-tick intent for the combat loop
+  else a.firing = true;
   a.burstLeft--;
   if (a.burstLeft <= 0) {
-    a.burstPause = 0.35 + state.rng() * 0.25;
-    const s = 1 + state.rng(); // strafe 1-2 m sideways between bursts
+    a.burstPause = 0.18 + state.rng() * 0.24 + (d > 25 ? 0.2 : 0);
+    const s = 1 + state.rng();
     const sd = state.rng() < 0.5 ? 1 : -1;
     a.strafeX = p.x + Math.cos(a.aimYaw) * sd * s;
     a.strafeZ = p.z - Math.sin(a.aimYaw) * sd * s;
@@ -487,7 +495,7 @@ function tickBot(state, p, dt) {
 }
 
 export function updateAI(state, dt) {
-  if (!state.noise) state.noise = []; // ring pushed by combat/main; create lazily
+  if (!state.noise) state.noise = [];
   const ps = state.players;
   if (state.phase !== 'live' && state.phase !== 'planted') {
     if (state.phase === 'buy' && state.aiRound !== state.round) {

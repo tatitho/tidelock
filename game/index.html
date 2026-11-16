@@ -1,13 +1,9 @@
-<!------------------------------------------------------------------
-  TIDELOCK — 5v5 plant/defuse tactical FPS in a blue-hour tidal
-  container terminal. Tide (attackers) plants a breaching charge on
-  the lock gate (Site A, amber) or the pump house (Site B, teal);
-  Harbour (defenders) holds both. Rounds: 15 s buy, 100 s live,
-  35 s bomb timer, first to 5, max 9. Buy economy ($800 start,
-  kill +$300, win +$3,250), 4 primaries + pistol + HE, team-plan
-  bots with 10 Hz perception, hearing and radio callouts. Original
-  map, fiction and names; three.js 0.187.0, no network, no files.
-------------------------------------------------------------------->
+<!----------------------------------------------------------
+  TIDELOCK — 5v5 plant/defuse FPS, blue-hour container terminal.
+  Tide plants on the lock gate (A) or pump house (B); Harbour holds both.
+  First to 7, max 12 (15 s buy, 100 s live, 35 s bomb). Economy, 4 primaries + HE, team-plan bots.
+  three.js 0.187.0, no network, no files.
+---------------------------------------------------------->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -25,6 +21,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--canvas);color:
 #timer{font-size:26px;font-weight:700;letter-spacing:1px}#timer.low{color:#ff5a4a}
 #roundScore{font-size:14px;color:var(--muted)}#roundScore b{color:var(--ink)}
 #phaseLabel{font-size:12px;letter-spacing:3px;color:var(--amber)}
+#pips{font-size:13px;letter-spacing:2px}
 #minimapBox{position:absolute;top:10px;left:10px}#minimap{display:block;background:#0a121c;border:1px solid var(--steel)}
 #money{margin-top:4px;font-size:15px;font-weight:700;color:var(--amber)}
 #feedBox{position:absolute;top:10px;right:10px;text-align:right;width:300px;overflow:hidden}
@@ -68,7 +65,7 @@ button{pointer-events:auto;margin-top:14px;padding:12px 28px;font-size:17px;font
 #roundBannerText{font-size:34px;letter-spacing:2px}
 #bannerSub{font-size:16px;color:var(--muted);margin-top:8px}
 #deathText,#matchText{font-size:18px;line-height:1.6}
-#matchText table{width:100%;border-collapse:collapse;margin-top:8px;font-size:15px}#matchText td{padding:3px 8px;border-bottom:1px solid rgba(233,230,223,.14)}#matchText td:first-child{text-align:left}#matchText tr.mvp td{color:#ffd75e;font-weight:700}
+#matchText table{width:100%;border-collapse:collapse;margin-top:8px;font-size:15px}#matchText td{padding:3px 8px;border-bottom:1px solid rgba(233,230,223,.14)}#matchText td:first-child{text-align:left}#matchText tr.mvp td{color:#ffd75e;font-weight:700}#matchText tr.dead td{opacity:.45}
 #tip{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--muted);background:rgba(14,22,34,.9);padding:4px 10px;border-radius:6px}
 .wicon{display:block;margin-bottom:2px}
 #spectateBar{position:absolute;top:64px;left:50%;transform:translateX(-50%);font-size:14px;letter-spacing:1px;background:rgba(14,22,34,.85);border:1px solid var(--steel);border-radius:6px;padding:6px 12px;display:none;white-space:nowrap}
@@ -79,7 +76,7 @@ button{pointer-events:auto;margin-top:14px;padding:12px 28px;font-size:17px;font
 <body>
 <div id="game"></div>
 <div id="hud">
-  <div id="topbar"><div id="timer">1:40</div><div id="roundScore"><b id="scoreTide">0</b> Tide — Harbour <b id="scoreHarbour">0</b></div><div id="roundLabel">ROUND 1 OF 9</div><div id="phaseLabel">BUY</div></div>
+  <div id="topbar"><div id="timer">1:40</div><div id="roundScore"><b id="scoreTide">0</b> Tide — Harbour <b id="scoreHarbour">0</b></div><div id="pips"></div><div id="roundLabel">ROUND 1 OF 12</div><div id="phaseLabel">BUY</div></div>
   <div id="spectateBar"></div>
   <div id="minimapBox" class="panel"><canvas id="minimap" width="180" height="140"></canvas><div id="money">$800</div></div>
   <div id="feedBox"><div id="killFeed"></div><div id="radioLog"></div></div>
@@ -91,7 +88,7 @@ button{pointer-events:auto;margin-top:14px;padding:12px 28px;font-size:17px;font
   <div id="tip">WASD move · Shift walk · Space jump · C crouch · B buy · E plant/defuse · 1/2/4 weapons · Q last · G utility · RMB aim · M mute</div>
 </div>
 <div id="flashOverlay"></div>
-<div id="overlayStart" class="overlay"><div class="card"><h1>TIDELOCK</h1><p>5v5 plant/defuse in a blue-hour tidal container terminal. Plant the charge on the lock gate (A, amber) or the pump house (B, teal). First to 5 rounds.</p><div class="keys"><b>WASD</b> move · <b>Mouse</b> look · <b>Click</b> fire · <b>R</b> reload · <b>B</b> buy (freeze phase) · <b>E</b> hold to plant/defuse · <b>1/2/4</b> weapons · <b>Q</b> last weapon · <b>G</b> utility · <b>RMB</b> aim · <b>C</b> crouch · <b>Space</b> jump · <b>Esc</b> pause</div><br><button id="playBtn">CLICK TO PLAY</button></div></div>
+<div id="overlayStart" class="overlay"><div class="card"><h1>TIDELOCK</h1><p>5v5 plant/defuse in a blue-hour tidal container terminal. Plant the charge on the lock gate (A, amber) or the pump house (B, teal). First to 7 rounds.</p><div class="keys"><b>WASD</b> move · <b>Mouse</b> look · <b>Click</b> fire · <b>R</b> reload · <b>B</b> buy (freeze phase) · <b>E</b> hold to plant/defuse · <b>1/2/4</b> weapons · <b>Q</b> last weapon · <b>G</b> utility · <b>RMB</b> aim · <b>C</b> crouch · <b>Space</b> jump · <b>Esc</b> pause</div><br><button id="playBtn">CLICK TO PLAY</button></div></div>
 <div id="overlayBuy" class="overlay hidden"><div class="card"><h2>BUY — <span id="buyTimer">15</span>s</h2><p>Money: <b id="buyMoney">$800</b> · Keys 1–0 or click. Weapons refill ammo on purchase.</p><div id="buyGrid">
 <div class="buyItem" data-item="vex9"><b>1 · Vex-9 SMG</b><span>$1,500</span><small>750 rpm · 32/96 · close quarters</small></div>
 <div class="buyItem" data-item="ar77"><b>2 · AR-77 Kestrel</b><span>$2,700</span><small>600 rpm · 30/90 · 1 headshot kill</small></div>

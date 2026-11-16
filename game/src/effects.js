@@ -1,12 +1,11 @@
 import * as THREE from 'three';
-// effects.js — pooled tracers, impacts, muzzle flash, explosion, shake.
 // All pooled; no `new` in step() or the effect triggers. Tracers/sparks
 // use additive blending; impacts kick up dust + a scorch mark.
 export function createEffects(state, scene) {
   const bm = (c, o, add) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o,
     blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: false });
   const tr = [], sc = [], sm = [], sk = [];
-  const tg = new THREE.BoxGeometry(0.04, 0.04, 1); // slightly thicker tracer core
+  const tg = new THREE.BoxGeometry(0.04, 0.04, 1);
   for (let i = 0; i < 16; i++) { const m = new THREE.Mesh(tg, bm(0xffc46b, 0, true));
     m.visible = false; scene.add(m); tr.push({ m, life: 0 }); }
   const N = 64, pos = new Float32Array(N * 3), vel = new Float32Array(N * 3), life = new Float32Array(N);

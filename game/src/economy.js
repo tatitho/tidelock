@@ -1,7 +1,7 @@
-// economy.js — TIDELOCK money: awards, buy logic, bot buying.
 import { addEvent } from './state.js';
 import { CONFIG } from './config.js';
 import { WEAPONS, WEAPON_LIST } from './weapons.js';
+import { MAP } from './map.js';
 
 const E = (CONFIG && CONFIG.econ) || {};
 const KILL = E.kill || 300, WIN = E.win || 3250, LOSS = E.loss || 1400;
@@ -103,4 +103,12 @@ export function botBuy(state, bot) {
   else if (bot.flashCount < 2 && bot.money >= FLASH) buyItem(state, bot, 'flash');
   if (bot.armor >= 100 && !bot.helmet && bot.money >= HELMET) buyItem(state, bot, 'helmet');
   if (bot.team === 'tide' && !bot.hasHE && bot.money >= 300) buyItem(state, bot, 'he');
+}
+
+// Buy window: the 15 s freeze, plus the first 18 s of live while the player is still inside their own spawn (within 4 m).
+export function canBuy(s, p) {
+  if (s.phase === 'buy') return true;
+  if (s.phase !== 'live' || s.phaseTime <= 82) return false;
+  const sp = (MAP.spawns[p.team] || [])[p.id % 5] || [p.x, p.z];
+  return (p.x - sp[0]) ** 2 + (p.z - sp[1]) ** 2 < 16;
 }

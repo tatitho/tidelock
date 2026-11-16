@@ -20,8 +20,6 @@ export const WEAPONS = {
   smoke: { id: 'smoke', name: 'Smoke Charge', price: 300, slot: 4 },
   flash: { id: 'flash', name: 'Flash Charge', price: 200, slot: 4 },
 };
-// Buy-menu order (hud.js keys 1-0; Plating priced in CONFIG.econ).
 export const WEAPON_LIST = ['vex9', 'ar77', 'longbow', 'breacher', 'he'];
 export const PRIMARIES = ['ar77', 'vex9', 'longbow', 'breacher'];
-export const PLATING_PRICE = 650;
 export default WEAPONS;

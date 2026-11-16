@@ -40,7 +40,7 @@ export function createPlayer(state, colliders) {
     const hit = overlaps();
     if (!hit) return;
     const h = p.crouch ? HEIGHT_CROUCH : HEIGHT;
-    let m = hit.max.x - (p.x - HALF), axis = 0, sign = 1; // exit +x
+    let m = hit.max.x - (p.x - HALF), axis = 0, sign = 1;
     const dxl = (p.x + HALF) - hit.min.x;
     if (dxl < m) { m = dxl; axis = 0; sign = -1; }
     const dzr = hit.max.z - (p.z - HALF);
@@ -80,10 +80,10 @@ export function createPlayer(state, colliders) {
     if (len > 1) { wx /= len; wz /= len; }
     let speed = p.crouch ? CROUCH : (walking ? WALK_KEY : WALK);
     speed *= (WEAPONS[p.weapon] && WEAPONS[p.weapon].speedMult) || 1;
-    if (state.time < p.tagUntil) speed *= 0.7; // tagged: slowed briefly
+    if (state.time < p.tagUntil) speed *= 0.7;
     if (state.playerAds) speed *= ADS_SLOW;
     wx *= speed; wz *= speed;
-    if (p.onGround && !moving) { // friction when idle on the ground
+    if (p.onGround && !moving) {
       const f = Math.max(0, 1 - FRICTION * dt);
       p.vx *= f; p.vz *= f;
       if (p.vx * p.vx + p.vz * p.vz < 0.0001) { p.vx = 0; p.vz = 0; }

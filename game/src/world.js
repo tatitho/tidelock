@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { MAP } from './map.js';
 import { PALETTE as P } from './palette.js';
 
-// world.js — TIDELOCK visuals only: lights, dusk sky, canvas textures
 // (corrugation / asphalt / hazard / water) + vendored AI container photos.
 // Deterministic, no randomness or wall-clock time anywhere in this file.
 

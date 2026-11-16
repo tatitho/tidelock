@@ -23,53 +23,53 @@ function buildModel(id) {
   const accent = ACCENTS[id] || 0xf0a830;
   let mg;
   if (id === 'ar77') {
-    g.add(box(0.055, 0.075, 0.42, STEEL, 0, 0, -0.28)); // receiver
-    g.add(box(0.06, 0.06, 0.3, MID, 0, 0, -0.58)); // handguard
-    g.add(box(0.02, 0.015, 0.3, 0x5a6a76, 0, 0.042, -0.58)); // top rail
-    g.add(box(0.032, 0.032, 0.3, DARK, 0, 0.012, -0.8)); // barrel
-    g.add(box(0.045, 0.045, 0.07, STEEL, 0, 0.012, -0.92)); // muzzle brake
+    g.add(box(0.055, 0.075, 0.42, STEEL, 0, 0, -0.28));
+    g.add(box(0.06, 0.06, 0.3, MID, 0, 0, -0.58));
+    g.add(box(0.02, 0.015, 0.3, 0x5a6a76, 0, 0.042, -0.58));
+    g.add(box(0.032, 0.032, 0.3, DARK, 0, 0.012, -0.8));
+    g.add(box(0.045, 0.045, 0.07, STEEL, 0, 0.012, -0.92));
     mg = box(0.04, 0.17, 0.07, DARK, 0, -0.11, -0.22); mg.rotation.x = 0.28; g.add(mg); // angled mag
-    g.add(box(0.05, 0.08, 0.18, DARK, 0, -0.01, 0)); // stock
-    mg = box(0.04, 0.09, 0.05, DARK, 0, -0.07, -0.04); mg.rotation.x = 0.25; g.add(mg); // grip
-    g.add(box(0.014, 0.035, 0.014, accent, 0, 0.055, -0.14)); // rear sight post
-    g.add(box(0.012, 0.028, 0.012, 0x8fa3ad, 0, 0.045, -0.72)); // front sight
-    g.add(box(0.05, 0.07, 0.06, GLOVE, 0, -0.075, -0.04)); // glove on grip
-    g.add(box(0.06, 0.045, 0.14, SLEEVE, 0, -0.045, -0.55)); // sleeve at forend
+    g.add(box(0.05, 0.08, 0.18, DARK, 0, -0.01, 0));
+    mg = box(0.04, 0.09, 0.05, DARK, 0, -0.07, -0.04); mg.rotation.x = 0.25; g.add(mg);
+    g.add(box(0.014, 0.035, 0.014, accent, 0, 0.055, -0.14));
+    g.add(box(0.012, 0.028, 0.012, 0x8fa3ad, 0, 0.045, -0.72));
+    g.add(box(0.05, 0.07, 0.06, GLOVE, 0, -0.075, -0.04));
+    g.add(box(0.06, 0.045, 0.14, SLEEVE, 0, -0.045, -0.55));
   } else if (id === 'vex9') {
     g.add(box(0.055, 0.07, 0.3, STEEL, 0, 0, -0.18));
     g.add(box(0.042, 0.042, 0.2, DARK, 0, 0.005, -0.45)); // suppressor
     mg = box(0.035, 0.19, 0.06, DARK, 0, -0.12, -0.08); mg.rotation.x = 0.2; g.add(mg);
-    g.add(box(0.05, 0.07, 0.12, DARK, 0, -0.005, 0.02)); // stock
+    g.add(box(0.05, 0.07, 0.12, DARK, 0, -0.005, 0.02));
     mg = box(0.04, 0.08, 0.05, DARK, 0, -0.065, -0.02); mg.rotation.x = 0.25; g.add(mg);
-    g.add(box(0.014, 0.03, 0.014, accent, 0, 0.05, -0.12)); // sight post
-    g.add(box(0.05, 0.07, 0.06, GLOVE, 0, -0.07, -0.02)); // glove on grip
+    g.add(box(0.014, 0.03, 0.014, accent, 0, 0.05, -0.12));
+    g.add(box(0.05, 0.07, 0.06, GLOVE, 0, -0.07, -0.02));
   } else if (id === 'longbow') {
     g.add(box(0.05, 0.07, 0.52, STEEL, 0, 0, -0.34));
     g.add(box(0.03, 0.03, 0.42, DARK, 0, 0.01, -0.88)); // long barrel
-    g.add(box(0.04, 0.04, 0.06, STEEL, 0, 0.01, -1.08)); // muzzle brake
+    g.add(box(0.04, 0.04, 0.06, STEEL, 0, 0.01, -1.08));
     g.add(box(0.042, 0.042, 0.26, DARK, 0, 0.062, -0.32)); // scope tube
     g.add(box(0.02, 0.02, 0.01, accent, 0, 0.062, -0.46)); // scope lens
-    g.add(box(0.04, 0.13, 0.06, DARK, 0, -0.09, -0.28)); // mag
-    g.add(box(0.05, 0.08, 0.2, DARK, 0, -0.01, 0.02)); // stock
+    g.add(box(0.04, 0.13, 0.06, DARK, 0, -0.09, -0.28));
+    g.add(box(0.05, 0.08, 0.2, DARK, 0, -0.01, 0.02));
     g.add(box(0.015, 0.015, 0.08, STEEL, 0.035, 0.01, -0.18)); // bolt
-    g.add(box(0.05, 0.06, 0.08, GLOVE, 0, -0.05, -0.02)); // glove at stock
+    g.add(box(0.05, 0.06, 0.08, GLOVE, 0, -0.05, -0.02));
   } else if (id === 'breacher') {
     g.add(box(0.07, 0.08, 0.42, STEEL, 0, 0, -0.26));
-    g.add(box(0.05, 0.05, 0.32, DARK, 0, 0.01, -0.62)); // barrel
+    g.add(box(0.05, 0.05, 0.32, DARK, 0, 0.01, -0.62));
     g.add(box(0.075, 0.05, 0.15, 0x3a2a20, 0, -0.025, -0.48)); // pump
-    g.add(box(0.06, 0.09, 0.16, DARK, 0, -0.01, 0.02)); // stock
-    g.add(box(0.014, 0.03, 0.014, accent, 0, 0.055, -0.2)); // sight post
-    g.add(box(0.05, 0.06, 0.08, GLOVE, 0, -0.05, -0.02)); // glove at stock
+    g.add(box(0.06, 0.09, 0.16, DARK, 0, -0.01, 0.02));
+    g.add(box(0.014, 0.03, 0.014, accent, 0, 0.055, -0.2));
+    g.add(box(0.05, 0.06, 0.08, GLOVE, 0, -0.05, -0.02));
   } else if (id === 'he') {
     g.add(box(0.08, 0.1, 0.08, 0x2e4a2a, 0, 0, -0.05)); // charge body
     g.add(box(0.015, 0.06, 0.02, STEEL, 0.045, 0.03, -0.05)); // lever
     g.add(box(0.015, 0.015, 0.03, accent, 0.05, 0.06, -0.05)); // pin
   } else {
-    g.add(box(0.045, 0.06, 0.24, STEEL, 0, 0, -0.12)); // slide
-    g.add(box(0.04, 0.05, 0.2, DARK, 0, -0.045, -0.1)); // frame
-    mg = box(0.04, 0.11, 0.06, DARK, 0, -0.09, 0.02); mg.rotation.x = 0.25; g.add(mg); // grip
-    g.add(box(0.012, 0.02, 0.012, accent, 0, 0.04, -0.2)); // sight
-    g.add(box(0.05, 0.07, 0.07, GLOVE, 0, -0.09, 0.02)); // glove on grip
+    g.add(box(0.045, 0.06, 0.24, STEEL, 0, 0, -0.12));
+    g.add(box(0.04, 0.05, 0.2, DARK, 0, -0.045, -0.1));
+    mg = box(0.04, 0.11, 0.06, DARK, 0, -0.09, 0.02); mg.rotation.x = 0.25; g.add(mg);
+    g.add(box(0.012, 0.02, 0.012, accent, 0, 0.04, -0.2));
+    g.add(box(0.05, 0.07, 0.07, GLOVE, 0, -0.09, 0.02));
   }
   return g;
 }

@@ -1,4 +1,3 @@
-// rounds.js — phase machine: buy -> live -> planted -> roundEnd -> next.
 import { addEvent, resetRound } from './state.js';
 import { CONFIG } from './config.js';
 import { MAP } from './map.js';
@@ -12,7 +11,7 @@ const DEFENCE = ['2-1-2', '3-1-1', '1-2-2'];
 
 let planPicker = null;
 export function setPlanPicker(fn) { planPicker = fn; }
-export function defuseTimeFor(p) { return p && p.hasKit ? 5 : 10; }
+export function defuseTimeFor(p) { return p && p.hasKit ? 3.6 : 7; }
 
 function pickPlans(s) {
   if (planPicker) { planPicker(s, 'tide'); planPicker(s, 'harbour'); return; }
@@ -40,12 +39,14 @@ export function startMatch(s) {
   s.score.tide = 0; s.score.harbour = 0; s.round = 1;
   s.matchWinner = null;
   s.roundResults = []; s.lastMvp = -1;
+  s.halftimeDone = false; s.swapped = false;
   s.lossStreak.tide = 0; s.lossStreak.harbour = 0;
   s.plans = { tide: 'a-main', harbour: '2-1-2' };
   s.events.length = 0; s.noise.length = 0;
   s.playerAds = false;
   for (let i = 0; i < s.players.length; i++) {
     const p = s.players[i];
+    p.team = p.id < 5 ? 'tide' : 'harbour'; // a new match restores sides (halftime may have flipped them)
     p.money = 800; p.kills = 0; p.deaths = 0;
   }
   startRound(s);
@@ -101,12 +102,23 @@ export function updateRounds(s, dt) {
         addEvent(s, 'round', w === 'tide' ? 'TIDE wins the match' : 'HARBOUR wins the match');
       } else if (s.round >= MAX_ROUNDS) {
         s.matchWinner = s.roundWinner; s.phase = 'matchEnd';
+      } else if (s.round === 6 && !s.halftimeDone) {
+        // Halftime: 5 s, sides swap (teams flip, so team-based rules invert), money $800, streaks reset.
+        s.halftimeDone = true; s.swapped = true;
+        for (let i = 0; i < s.players.length; i++) { const p = s.players[i]; p.team = p.team === 'tide' ? 'harbour' : 'tide'; p.money = 800; }
+        s.lossStreak.tide = 0; s.lossStreak.harbour = 0;
+        s.phase = 'halftime'; s.phaseTime = 5;
+        addEvent(s, 'round', 'Halftime — sides swap, money reset');
       } else { s.round++; startRound(s); }
     }
     return;
   }
+  if (s.phase === 'halftime') {
+    if (s.phaseTime <= 0) { s.round++; startRound(s); }
+    return;
+  }
   if (s.phase !== 'live' && s.phase !== 'planted') return;
-  const b = s.bomb; // dead carrier drops it; Tide walking over it picks it up
+  const b = s.bomb;
   if (b.status === 'carried') {
     const c = s.players[b.carrier];
     if (!c || !c.alive) {
@@ -114,9 +126,10 @@ export function updateRounds(s, dt) {
       addEvent(s, 'round', 'Bomb dropped');
     } else { b.x = c.x; b.z = c.z; }
   } else if (b.status === 'dropped') {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < s.players.length; i++) {
       const p = s.players[i];
-      if (p.alive && (p.x - b.x) * (p.x - b.x) + (p.z - b.z) * (p.z - b.z) < 1.44) {
+      if (p.team !== 'tide' || !p.alive) continue;
+      if ((p.x - b.x) * (p.x - b.x) + (p.z - b.z) * (p.z - b.z) < 1.44) {
         b.status = 'carried'; b.carrier = i; p.isCarrier = true;
         addEvent(s, 'round', p.name + ' picked up the bomb');
         break;

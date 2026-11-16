@@ -1,4 +1,3 @@
-// WebAudio synth SFX only: oscillators + filtered noise, no files, no network.
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {

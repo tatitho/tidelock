@@ -1,8 +1,6 @@
-// map.js — TIDELOCK "Tidelock Basin" map data, pure data, no THREE imports.
 // 44x34 m flat yard (x east +, z south +, origin centre, yaw 0 faces -z).
 // Walls 4.5 m. Cover is deliberate: 0.9 m crates jumpable (jump 0.96 m),
 // 1.1 m crouch-cover, 2.4 m blocks sight, 3.3 m double-stacks block all.
-// Box: centre + size, y = centre h.
 export const MAP = {
   size: { x: 44, z: 34 }, wallH: 4.5,
   boxes: [
@@ -16,7 +14,6 @@ export const MAP = {
     { x: -15, y: 0.55, z: -11, w: 1.6, h: 1.1, d: 1.0, mat: 'amber' },
     { x: 15, y: 1.2, z: -14.5, w: 6, h: 2.4, d: 2.5, mat: 'tealDark' },
     { x: 15, y: 0.45, z: -11, w: 1.8, h: 0.9, d: 1.2, mat: 'teal' },
-    // Mid container canyon: flanking 2.4 m stacks, 3 m doors gap at (0,0).
     { x: -3.5, y: 1.2, z: 0, w: 2.4, h: 2.4, d: 6, mat: 'rust' },
     { x: 3.5, y: 1.2, z: 0, w: 2.4, h: 2.4, d: 6, mat: 'slate' },
     { x: 0, y: 1.65, z: -6, w: 6, h: 3.3, d: 2.4, mat: 'ochre' },
@@ -71,5 +68,8 @@ export const MAP = {
   ],
   holds: { aHold: { x: -16.5, z: -13 }, bHold: { x: 15, z: -12.8 } },
   gantry: { x: 0, z: -2 },
+  // Named callouts [name, x, z]: every lane and corner has a name the HUD, minimap and radio use.
+  callouts: [['A-GATE',-15,-11],['B-PUMP',15,-11],['MID-DOORS',0,1.2],['MID-LOW',0,4],['GANTRY',0,-2],['A-LONG',-16.5,0],['B-LONG',16.5,0],['A-SHORT',-8,-8],['B-SHORT',8,-8],['CT-CONN',0,-14],['T-SPAWN',-16,13],['CT-SPAWN',16,-12],['A-CRATES',-19,-4],['B-CRATES',19,4],['YARD',-12,10],['A-ENTRY',-12,-6],['B-ENTRY',12,-6],['A-HOLD',-16.5,-13],['B-HOLD',15,-12.8],['MID-N',0,-8],['MID-CANYON',0,7]],
 };
+export function nearestCallout(x, z) { let b = 'MID', d = 16; const cs = MAP.callouts; for (let i = 0; i < cs.length; i++) { const q = (cs[i][1] - x) ** 2 + (cs[i][2] - z) ** 2; if (q < d) { d = q; b = cs[i][0]; } } return b; }
 export default MAP;

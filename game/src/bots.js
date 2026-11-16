@@ -14,22 +14,22 @@ import { CONFIG } from './config.js';
 import { clamp, dist2 } from './utils.js';
 
 const PI = Math.PI;
-const BOT_SPEED = 4.6; // spec 2.5: bots walk 4.6 m/s
+const BOT_SPEED = 4.6;
 const CROUCH_SPEED = 2.4;
-const HALF_W = 0.35; // bot collision half-width
+const HALF_W = 0.35;
 
 const GEO_LEGS = new BoxGeometry(0.34, 0.78, 0.22);
 const GEO_TORSO = new BoxGeometry(0.52, 0.6, 0.3);
-const GEO_TRIM = new BoxGeometry(0.54, 0.14, 0.32); // wide bright team stripe
+const GEO_TRIM = new BoxGeometry(0.54, 0.14, 0.32);
 const GEO_HEAD = new SphereGeometry(0.16, 12, 10); // head hit sphere r 0.16
-const GEO_HELMET = new SphereGeometry(0.17, 12, 8, 0, 2 * PI, 0, 1.45); // cap hugging head
-const GEO_VISOR = new BoxGeometry(0.24, 0.06, 0.03); // wide glowing visor slit
+const GEO_HELMET = new SphereGeometry(0.17, 12, 8, 0, 2 * PI, 0, 1.45);
+const GEO_VISOR = new BoxGeometry(0.24, 0.06, 0.03);
 const GEO_ARM = new BoxGeometry(0.09, 0.09, 0.44);
-const GEO_GUN = new BoxGeometry(0.07, 0.1, 0.98); // long rifle, steel
-const GEO_TIP = new BoxGeometry(0.05, 0.06, 0.08); // team-coloured muzzle tip
-const GEO_PAD = new BoxGeometry(0.16, 0.07, 0.24); // shoulder pad
-const GEO_PACK = new BoxGeometry(0.34, 0.4, 0.12); // backpack
-const GEO_KNEE = new BoxGeometry(0.12, 0.14, 0.05); // knee pad
+const GEO_GUN = new BoxGeometry(0.07, 0.1, 0.98);
+const GEO_TIP = new BoxGeometry(0.05, 0.06, 0.08);
+const GEO_PAD = new BoxGeometry(0.16, 0.07, 0.24);
+const GEO_PACK = new BoxGeometry(0.34, 0.4, 0.12);
+const GEO_KNEE = new BoxGeometry(0.12, 0.14, 0.05);
 const GEO_CHEVRON = new ConeGeometry(0.09, 0.18, 4);
 
 function wrapAng(a) {
@@ -77,12 +77,8 @@ function setOp(rec, o) {
 
 function spawnFor(p) {
   const s = MAP.spawns || {};
-  if (p.team === 'tide') {
-    const a = s.tide || [];
-    return a[Math.min(p.id, a.length - 1)] || [p.x, p.z];
-  }
-  const a = s.harbour || [];
-  return a[Math.min(p.id - 5, a.length - 1)] || [p.x, p.z];
+  const a = s[p.team] || [];
+  return a[Math.min(p.id % 5, a.length - 1)] || [p.x, p.z];
 }
 
 export function createBots(state, scene) {
@@ -94,8 +90,8 @@ export function createBots(state, scene) {
   for (let id = 1; id <= 9; id++) {
     const p = state.players[id];
     if (!p) continue;
-    const trim = p.team === 'tide' ? 0xf0a830 : 0x2e8f86; // Tide amber / Harbour teal
-    const tint = p.team === 'tide' ? 0x8f6428 : 0x1e6b62; // team-coloured torso
+    const trim = p.team === 'tide' ? 0xf0a830 : 0x2e8f86;
+    const tint = p.team === 'tide' ? 0x8f6428 : 0x1e6b62;
     const mats = {
       body: new MeshStandardMaterial({ color: tint, roughness: 0.8, transparent: true }),
       trim: new MeshStandardMaterial({ color: trim, emissive: trim, emissiveIntensity: 0.45, roughness: 0.55, transparent: true }),
@@ -163,7 +159,7 @@ export function createBots(state, scene) {
 
   function stepBot(rec, dt) {
     const p = rec.player, a = p.ai, g = rec.group;
-    if (!p.alive) { // death: fall over 0.4 s, fade after 8 s
+    if (!p.alive) {
       if (rec.chevron) rec.chevron.visible = false;
       if (rec.tag) rec.tag.visible = false;
       if (rec.fallT < 0.4) {
@@ -208,7 +204,7 @@ export function createBots(state, scene) {
     }
     const speed = (wantCrouch || (a && a.walkOnly) ? CROUCH_SPEED : BOT_SPEED) * (state.time < p.tagUntil ? 0.7 : 1);
     if (rec.avoidT > 0 && a && (a.mode === 'move' || a.mode === 'investigate' || a.mode === 'retreat')) {
-      rec.avoidT -= dt; // sidestep around it, then resume the route
+      rec.avoidT -= dt;
       const len = Math.sqrt(mx * mx + mz * mz) || 1;
       const ux = mx / len, uz = mz / len;
       mx = -uz * rec.avoidSign; mz = ux * rec.avoidSign;
@@ -231,7 +227,7 @@ export function createBots(state, scene) {
     const nz = p.z + p.vz * dt;
     if (!hitsWall(cols, p.x, nz, p.y)) p.z = nz; else p.vz = 0;
     if (moving && Math.abs(p.x - ox) + Math.abs(p.z - oz) < 0.02 && rec.avoidT <= 0) {
-      rec.avoidT = 0.7; rec.avoidSign *= -1; // stuck: sidestep, flip side
+      rec.avoidT = 0.7; rec.avoidSign *= -1;
     }
     if (p.x > 21.6) p.x = 21.6; else if (p.x < -21.6) p.x = -21.6;
     if (p.z > 16.6) p.z = 16.6; else if (p.z < -16.6) p.z = -16.6;

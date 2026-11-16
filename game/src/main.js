@@ -1,6 +1,6 @@
 // TIDELOCK — 5v5 plant/defuse FPS, blue-hour container terminal. Tide
 // plants on the lock gate (A, amber) or pump house (B, teal); Harbour
-// holds both. Rounds: 15 s buy, 100 s live, 35 s bomb, first to 5, max 9.
+// holds both. Rounds: 15 s buy, 100 s live, 35 s bomb, first to 7, max 12.
 // main.js wires modules only (state.js owns state). Fixed-step 60 Hz sim,
 // deterministic ?shot= captures. Import order = the dossier's reading order.
 import * as THREE from 'three';
@@ -10,7 +10,7 @@ import { CONFIG } from './config.js';
 import { WEAPONS, PRIMARIES } from './weapons.js';
 import { MAP } from './map.js';
 import { startMatch, updateRounds, setPlanPicker, defuseTimeFor } from './rounds.js';
-import { buyItem } from './economy.js';
+import { buyItem, canBuy } from './economy.js';
 import { updateAI, pickPlan } from './ai.js';
 import { createBots } from './bots.js';
 import { createCombat } from './combat.js';
@@ -31,9 +31,8 @@ const seed = parseInt(params.get('seed') || '7', 10) || 7;
 state.seed = seed;
 state.rng = mulberry32(seed);
 const FIXED = CONFIG.tick || 1 / 60;
-const PLANT_T = CONFIG.plantTime || 3.2; // defuse time is per-player (kit? 5 : 10)
+const PLANT_T = CONFIG.plantTime || 3.2; // defuse time is per-player (kit? 3.6 : 7)
 const EMPTY_KEYS = new Set();
-if (!CONFIG.botTiers) CONFIG.botTiers = CONFIG.tiers;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -48,15 +47,15 @@ const world = await createWorld(state, scene, renderer);
 const effects = createEffects(state, scene);
 const bots = createBots(state, scene);
 const combat = createCombat(state, world.shootables, effects);
-state.combat = combat; // ai.js fires bot shots through state.combat.shoot
+state.combat = combat;
 const weapon = createWeaponView(camera, state);
 const grenades = createGrenades(state, scene, world.colliders, effects);
-state.grenades = grenades; // ai.js reads smokeBlocks + throwGrenade via this
+state.grenades = grenades;
 const player = createPlayer(state, world.colliders);
 const me = state.players[0];
 const audio = createAudio();
 const hud = createHud(state, {
-  onBuy(id) { if (state.phase === 'buy' && buyItem(state, me, id)) audio.buy(); },
+  onBuy(id) { if (canBuy(state, me) && buyItem(state, me, id)) audio.buy(); },
   getSpread() { return weapon.spread(); },
 });
 const minimap = createMinimap(document.getElementById('minimap'));
@@ -77,9 +76,10 @@ function newMatch() { specClear(); startMatch(state); bots.reset(); }
 const buyItems = document.querySelectorAll('#buyGrid .buyItem');
 for (let i = 0; i < buyItems.length; i++) {
   buyItems[i].addEventListener('click', () => {
-    if (state.phase === 'buy' && buyItem(state, me, buyItems[i].dataset.item)) audio.buy();
+    if (canBuy(state, me) && buyItem(state, me, buyItems[i].dataset.item)) audio.buy();
   });
 }
+
 
 function onLockChange(locked) {
   if (locked) {
@@ -97,7 +97,7 @@ function onLockChange(locked) {
   }
 }
 
-let acc = 0, last = performance.now(), hudT = 0, bannerUntil = 0;
+let acc = 0, last = performance.now(), hudT = 0, bannerUntil = 0, cue10 = false;
 let deathShown = false, prevQ = false, prevB = false, prevM = false, prevG = false, prevFire = false, prevSp = false, prevDigit = '';
 let lastPrimary = PRIMARIES.indexOf(me.weapon) >= 0 ? me.weapon : 'p9';
 let lastWeapon = me.weapon;
@@ -142,6 +142,8 @@ function updateUseChannel(dt) {
       txt = 'Hold E to defuse — ' + Math.round(me.defusing * 100) + '%'; pct = me.defusing;
     } else { me.defusing = 0; txt = 'Hold E to defuse'; }
     me.planting = 0;
+  } else if (state.phase === 'live' && canBuy(state, me)) {
+    txt = 'BUY — ' + Math.max(0, Math.ceil(state.phaseTime - 82)) + ' s left in spawn';
   } else { me.planting = 0; me.defusing = 0; }
   prompt(txt, pct);
 }
@@ -175,7 +177,7 @@ function handleKeys(keys) {
   }
   prevG = g;
   const b = keys.has('KeyB');
-  if (b && !prevB && state.phase === 'buy' && me.alive) {
+  if (b && !prevB && canBuy(state, me) && me.alive) {
     if (hud.isBuyOpen()) closeBuy();
     else {
       hud.showBuy(true);
@@ -202,7 +204,7 @@ function handleKeys(keys) {
     if (prevDigit && !keys.has(prevDigit)) prevDigit = '';
     for (let i = 0; i < 10; i++) {
       const code = i === 9 ? 'Digit0' : 'Digit' + (i + 1);
-      if (keys.has(code) && prevDigit !== code) { prevDigit = code; if (buyItem(state, me, buyIds[i])) audio.buy(); }
+      if (keys.has(code) && prevDigit !== code) { prevDigit = code; if (canBuy(state, me) && buyItem(state, me, buyIds[i])) audio.buy(); }
     }
     return;
   }
@@ -215,8 +217,9 @@ function handleKeys(keys) {
 }
 
 function onPhaseChange(prev, next) {
-  if (next === 'planted') audio.startPlantedLoop();
+  if (next === 'planted') { audio.startPlantedLoop(); cue10 = false; }
   if (prev === 'planted') audio.stopPlantedLoop();
+  if (next === 'halftime') hud.showBanner('HALFTIME — SIDES SWAP', 'Tide now defends · money reset $800');
   if (next === 'roundEnd') {
     const w = state.roundWinner === 'tide' ? 'TIDE' : 'HARBOUR';
     let sub = state.roundReason + '  ·  ' + state.score.tide + ' — ' + state.score.harbour;
@@ -251,7 +254,8 @@ function stepSim(dt) {
   const prevPhase = state.phase;
   updateRounds(state, dt);
   if (state.phase !== prevPhase) onPhaseChange(prevPhase, state.phase);
-  if (prevPhase === 'roundEnd' && state.phase === 'buy') bots.reset();
+  if ((prevPhase === 'roundEnd' || prevPhase === 'halftime') && state.phase === 'buy') bots.reset();
+  if (state.phase === 'planted' && state.phaseTime <= 10 && !cue10) { cue10 = true; audio.plantBeep(2); } // 10 s bomb cue
   if (state.phase === 'menu' || state.phase === 'matchEnd') return;
   updateAI(state, dt);
   bots.update(dt);
@@ -269,8 +273,9 @@ function stepSim(dt) {
     hud.update();
     minimap.draw(state);
     if (hud.isBuyOpen()) {
+      if (!canBuy(state, me)) closeBuy();
       setText('buyMoney', '$' + me.money);
-      setText('buyTimer', String(Math.max(0, Math.ceil(state.phaseTime))));
+      setText('buyTimer', String(Math.max(0, Math.ceil(state.phase === 'live' ? state.phaseTime - 82 : state.phaseTime))));
     }
   }
   if (!me.alive && !deathShown && (state.phase === 'live' || state.phase === 'planted')) {
@@ -412,20 +417,15 @@ function stageShot(name) {
   } else if (name === 'fight') {
     base(3, 2, 1, 'live', 84, 4650, 25);
     me.armor = 85;
-    // Mid-fight at A: three Harbour bots facing the camera and firing,
-    // Rook flanking left, the giant A sign behind them.
+    // Mid-fight at A, framed on the moon: player SW of Kess, aim NE puts the moon top-centre.
     const faceMe = (p) => { const a = p.ai; a.mode = 'hold'; a.lookYaw = Math.atan2(-(me.x - p.x), -(me.z - p.z)); a.holdUntil = 1e9; p.yaw = a.lookYaw; a.aimYaw = a.lookYaw; if (p.group) p.group.rotation.y = p.yaw; };
-    const rookFace = () => { const r = state.players[1]; r.yaw = 0.70; r.ai.mode = 'hold'; r.ai.lookYaw = 0.70; r.ai.aimYaw = 0.70; r.ai.holdUntil = 1e9; if (r.group) r.group.rotation.y = 0.70; };
     placeBot(5, -10, -4, 0); placeBot(6, -14, -4, 0); placeBot(7, -8, -8, 0); placeBot(1, -6.5, -2.33, 0);
-    me.x = -4; me.z = 2; me.yaw = 0.70; me.pitch = 0;
-    stepN(30); // updateAI creates each bot's ai object (ensureAI) here
+    me.x = -16; me.z = 4; me.yaw = -0.64; me.pitch = 0;
+    stepN(30);
     placeBot(5, -10, -4, 0); placeBot(6, -14, -4, 0); placeBot(7, -8, -8, 0); placeBot(1, -6.5, -2.33, 0);
-    faceMe(state.players[5]); faceMe(state.players[6]); faceMe(state.players[7]); rookFace();
-    me.x = -4; me.z = 2; me.yaw = 0.70; me.pitch = 0; // re-place: the player drifts during stepN
-    // Uncrouch the staged bots: bots.update lowers the body sub-group
-    // (head + torso hitboxes) 0.42 m while crouched, and placeBot does
-    // not reset it — a crouched Kess dodges the headshot ray. dt 0
-    // syncs body + group transforms with no movement.
+    faceMe(state.players[5]); faceMe(state.players[6]); faceMe(state.players[7]); faceMe(state.players[1]);
+    me.x = -16; me.z = 4; me.yaw = -0.64; me.pitch = 0;
+    // Uncrouch staged bots: crouch lowers hitboxes 0.42 m; dt 0 syncs transforms.
     for (const i of [1, 5, 6, 7]) { const p = state.players[i]; p.crouch = false; if (p.ai) p.ai.wantCrouch = false; }
     bots.update(0);
     effects.step(1, null); // clear stepN tracers/muzzles: only the two staged shots may draw
@@ -440,14 +440,14 @@ function stageShot(name) {
     weapon.setAds(true);
     aimAt(state.players[5], 1.52);
     syncCamera();
-    scene.updateMatrixWorld(true); // hitbox matrices must be current to shoot
+    scene.updateMatrixWorld(true);
     const kick = weapon.fire(); // one real shot, spread 0 (see combat.shoot)
     if (kick) {
       camera.getWorldDirection(TMP_A);
       combat.shoot(state, me, TMP_A, 0, 'ar77');
       player.recoil(kick.pitch, kick.yaw);
     }
-    weapon.clearFlash(); // no frozen flash card in the capture
+    weapon.clearFlash();
     addEvent(state, 'callout', 'Rook (Entry): contact mid, two pushing A');
     addEvent(state, 'callout', 'Sable (Lurk): rotating through mid doors');
     addEvent(state, 'callout', 'Ivo (Support): go go, executing A');
@@ -464,8 +464,8 @@ function stageShot(name) {
   } else if (name === 'board') {
     base(7, 5, 2, 'matchEnd', 5, 4650, 18);
     state.roundWinner = 'tide'; state.roundReason = 'bomb detonated'; state.matchWinner = 'tide'; state.lastMvp = 1;
-    const kd = [[9, 5, 4650], [11, 3, 6400], [7, 5, 5200], [6, 5, 3800], [5, 5, 2900], [8, 9, 5600], [6, 8, 4100], [4, 7, 2400], [3, 8, 3300], [2, 6, 2050]];
-    for (let i = 0; i < 10; i++) { const p = state.players[i]; p.kills = kd[i][0]; p.deaths = kd[i][1]; p.money = kd[i][2]; }
+    const kd = [[9, 5, 4650, 2], [11, 3, 6400, 3], [7, 5, 5200, 1], [6, 5, 3800, 2], [5, 5, 2900, 0], [8, 9, 5600, 2], [6, 8, 4100, 1], [4, 7, 2400, 0], [3, 8, 3300, 1], [2, 6, 2050, 0]];
+    for (let i = 0; i < 10; i++) { const p = state.players[i]; p.kills = kd[i][0]; p.deaths = kd[i][1]; p.money = kd[i][2]; p.assists = kd[i][3]; }
     me.x = -15; me.z = -6; me.yaw = 0; me.pitch = 0;
     placeBot(1, -12, -7); placeBot(5, -13, -10);
     state.players[5].alive = false; state.players[5].hp = 0;

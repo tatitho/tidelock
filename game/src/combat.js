@@ -1,5 +1,3 @@
-// combat.js — hitscan for player + bots (state.combat.shoot) + grenades
-// (applyDamage). One reused Raycaster; hitboxes are bots.js meshes.
 // Damage = base x part x falloff x armour (50% to armour). No alloc
 // in shoot(). Friendly fire OFF.
 import * as THREE from 'three';
@@ -23,6 +21,7 @@ function falloff(w, d) {
 
 export function applyDamage(st, target, amount, attacker, part) {
   if (!target || !target.alive) return false;
+  if (st.phase === 'buy') return false; // freeze protection: no damage in spawn
   const wAp = (WEAPONS[attacker && attacker.weapon] || {}).ap;
   const ap = part === 'blast' ? 0.5 : (wAp ?? 0.5);
   let hpDmg = amount;
@@ -33,6 +32,7 @@ export function applyDamage(st, target, amount, attacker, part) {
     hpDmg = amount * ap + (armourDmg - absorbed);
   }
   target.hp -= hpDmg;
+  if (attacker && attacker !== target) { const db = target.dmgBy || (target.dmgBy = {}); db[attacker.id] = (db[attacker.id] || 0) + hpDmg; }
   target.tagUntil = st.time + 0.3;
   if (target.id === 0) target.punchDeg = 1.5;
   if (target.hp > 0) return false;
@@ -44,6 +44,9 @@ export function applyDamage(st, target, amount, attacker, part) {
   if (attacker && attacker !== target) {
     attacker.kills++;
     awardKill(st, attacker);
+    const db = target.dmgBy || {}; // assists: a teammate who dealt >=40 dmg
+    for (const id in db) if (+id !== attacker.id && db[id] >= 40) { const q = st.players[+id]; if (q && q.team === attacker.team) q.assists++; }
+    target.dmgBy = null;
     const wName = part === 'blast' ? 'HE Charge' :
       (WEAPONS[attacker.weapon] ? WEAPONS[attacker.weapon].name : attacker.weapon);
     addEvent(st, 'kill', attacker.name + ' ⌖ ' + target.name + ' — ' + wName +

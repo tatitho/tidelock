@@ -1,5 +1,6 @@
 import { WEAPONS, WEAPON_LIST } from './weapons.js';
 import { CONFIG } from './config.js';
+import { nearestCallout } from './map.js';
 
 // Cached-value DOM updates only. Element ids (Agent A index.html):
 // health-bar health-num armor-wrap armor-bar ammo-mag ammo-reserve
@@ -33,7 +34,6 @@ function fmtTimer(s) {
   s = Math.max(0, Math.ceil(s));
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }
-// Weapon icons: 72x28 side-profile silhouettes, drawn once at buy build.
 const ICONS = {
   ar77: [4, 12, 52, 3, 28, 9, 22, 5, 52, 11, 14, 4, 30, 14, 5, 5],
   vex9: [8, 12, 30, 3, 38, 11, 10, 5, 20, 9, 18, 5, 52, 11, 12, 4, 22, 14, 4, 5],
@@ -75,8 +75,14 @@ export function createHud(state, opts) {
     if (state.phase === 'live') return 'LIVE';
     if (state.phase === 'planted') return 'BOMB PLANTED';
     if (state.phase === 'roundEnd') return 'ROUND END';
+    if (state.phase === 'halftime') return 'HALFTIME';
     if (state.phase === 'matchEnd') return 'MATCH END';
     return 'MENU';
+  }
+  function pips(team) { // alive pips: one dot per player, hollow when dead
+    let s = '';
+    for (let i = 0; i < state.players.length; i++) { const q = state.players[i]; if (q.team === team) s += q.alive ? '●' : '○'; }
+    return s;
   }
   function feed() {
     const evs = state.events || [];
@@ -110,7 +116,7 @@ export function createHud(state, opts) {
     const extra = [
       ['smoke', '7 · Smoke', WEAPONS.smoke ? WEAPONS.smoke.price : 300, 'smoke wall · 15 s'],
       ['flash', '8 · Flash', WEAPONS.flash ? WEAPONS.flash.price : 200, 'blind 1.5 s'],
-      ['kit', '9 · Defuse Kit', PRICE.kit, 'defuse 10 s → 5 s'],
+      ['kit', '9 · Defuse Kit', PRICE.kit, 'defuse 7 s → 3.6 s'],
       ['helmet', '0 · Helmet', PRICE.helmet, 'headshot cap ×2'],
     ];
     for (let i = 0; i < extra.length; i++) {
@@ -163,8 +169,9 @@ export function createHud(state, opts) {
       if (el.timer) el.timer.classList.toggle('low', state.phaseTime < 10 && (state.phase === 'live' || state.phase === 'planted'));
       setText($('scoreTide'), String(state.score.tide));
       setText($('scoreHarbour'), String(state.score.harbour));
-      setText(el['round-label'], 'ROUND ' + state.round + ' OF 9');
-      setText(el['phase-label'], phaseText());
+      setText(el['round-label'], 'ROUND ' + state.round + ' OF 12 · ' + nearestCallout(p.x, p.z));
+      setText($('pips'), pips('tide') + '  ' + pips('harbour'));
+      setText(el['phase-label'], phaseText() + ' · PLAN ' + (state.plans[p.team] || '').toUpperCase());
       setText(el.money, '$' + p.money);
       if (el.crosshair && opts.getSpread) {
         const gap = Math.round(4 + Math.min(48, opts.getSpread() * 900));
@@ -238,7 +245,7 @@ export function createHud(state, opts) {
       const rows = state.players.slice().sort((a, b) => b.kills - a.kills);
       let h = '<div>' + w + ' WINS ' + state.score.tide + ' — ' + state.score.harbour + ' · ' + (state.roundReason || '') + '</div><table>';
       for (let i = 0; i < rows.length; i++) { const p = rows[i];
-        h += '<tr' + (p.id === state.lastMvp ? ' class="mvp"' : '') + '><td>' + p.name + '</td><td>' + (p.team === 'tide' ? 'TIDE' : 'HARBOUR') + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>$' + p.money + '</td></tr>'; }
+        h += '<tr' + (p.id === state.lastMvp ? ' class="mvp"' : !p.alive ? ' class="dead"' : '') + '><td>' + p.name + (p.isCarrier ? ' ◆' : '') + '</td><td>' + (p.team === 'tide' ? 'TIDE' : 'HARBOUR') + '</td><td>' + p.kills + '</td><td>' + (p.assists || 0) + '</td><td>' + p.deaths + '</td><td>$' + p.money + '</td></tr>'; }
       h += '</table>';
       const mv = state.lastMvp >= 0 ? state.players[state.lastMvp] : null;
       if (mv) h += '<div>★ MVP — ' + mv.name + ' · ' + mv.kills + ' kills</div>';

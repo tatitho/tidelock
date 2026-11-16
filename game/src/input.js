@@ -1,4 +1,3 @@
-// Pointer lock + keys + mouse + wheel. Starter pattern, extended keys.
 export function createInput(canvas, onLockChange) {
   const st = {
     keys: new Set(), lookX: 0, lookY: 0, firing: false, ads: false,
